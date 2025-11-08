@@ -17,6 +17,7 @@ import React, { useRef } from "react";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { Platform } from "react-native";
 import { setAndroidNavigationBar } from "@/lib/android-navigation-bar";
+import { NotificationProvider } from "@/components/notification-provider";
 
 const LIGHT_THEME: Theme = {
   ...DefaultTheme,
@@ -58,24 +59,26 @@ export default function RootLayout() {
       publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY}
     >
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
-          <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="index" />
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="(auth)" />
-              <Stack.Screen
-                name="modal"
-                options={{
-                  title: "Modal",
-                  presentation: "modal",
-                  headerShown: true,
-                }}
-              />
-            </Stack>
-          </GestureHandlerRootView>
-        </ThemeProvider>
+        <NotificationProvider>
+          <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
+            <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="index" />
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="(auth)" />
+                <Stack.Screen
+                  name="modal"
+                  options={{
+                    title: "Modal",
+                    presentation: "modal",
+                    headerShown: true,
+                  }}
+                />
+              </Stack>
+            </GestureHandlerRootView>
+          </ThemeProvider>
+        </NotificationProvider>
       </ConvexProviderWithClerk>
     </ClerkProvider>
   );

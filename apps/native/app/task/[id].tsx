@@ -27,15 +27,21 @@ export default function TaskDetailScreen() {
   const { user: clerkUser } = useUser();
 
   const taskWithFlow = useQuery(api.tasks.getTaskWithFlow, { taskId });
-  const tasks = useQuery(api.tasks.listByGroup, {
-    groupId: groupId as Id<"groups">,
-  });
+
+  // Get groupId from taskWithFlow if not provided in params
+  const actualGroupId = groupId || taskWithFlow?.groupId;
+
+  const tasks = useQuery(
+    api.tasks.listByGroup,
+    actualGroupId ? { groupId: actualGroupId as Id<"groups"> } : "skip"
+  );
   const task = tasks?.find((t) => t._id === taskId);
   const subtasks = useQuery(api.subtasks.list, { parentTaskId: taskId });
   const currentUser = useQuery(api.users.getCurrentUser);
-  const groupMembers = useQuery(api.groups.getMembersWithUserInfo, {
-    groupId: groupId as Id<"groups">,
-  });
+  const groupMembers = useQuery(
+    api.groups.getMembersWithUserInfo,
+    actualGroupId ? { groupId: actualGroupId as Id<"groups"> } : "skip"
+  );
 
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");

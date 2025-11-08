@@ -312,6 +312,23 @@ export const addMember = mutation({
       joinedAt: Date.now(),
     } as any);
 
+    // Notify the new member
+    const group = await ctx.db.get(args.groupId);
+    if (group) {
+      await ctx.db.insert("notifications", {
+        userId: userToAdd._id,
+        type: "group_invite",
+        encryptedTitle: "Added to Group",
+        encryptedMessage: me
+          ? `${me.name} added you to "${group.name}"`
+          : `You were added to "${group.name}"`,
+        relatedGroupId: args.groupId,
+        relatedUserId: me?._id,
+        isRead: false,
+        createdAt: Date.now(),
+      });
+    }
+
     return { success: true };
   },
 });
@@ -376,6 +393,23 @@ export const addMemberById = mutation({
       role: args.role,
       joinedAt: Date.now(),
     } as any);
+
+    // Notify the new member
+    const group = await ctx.db.get(args.groupId);
+    if (group) {
+      await ctx.db.insert("notifications", {
+        userId: args.userId,
+        type: "group_invite",
+        encryptedTitle: "Added to Group",
+        encryptedMessage: me
+          ? `${me.name} added you to "${group.name}"`
+          : `You were added to "${group.name}"`,
+        relatedGroupId: args.groupId,
+        relatedUserId: me._id,
+        isRead: false,
+        createdAt: Date.now(),
+      });
+    }
 
     return { success: true };
   },

@@ -117,8 +117,13 @@ export const listByGroup = query({
 export const updateStatus = mutation({
   args: { taskId: v.id("tasks"), statusId: v.id("taskStatuses") },
   handler: async (ctx, { taskId, statusId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) throw new Error("Task not found");
+
     // Check if moving to "Done" status
     const newStatus = await ctx.db.get(statusId);
+    const wasNotDone = task.statusId !== statusId; // Track if status is actually changing
+
     if (newStatus && newStatus.name === "Done") {
       // Check if all subtasks are completed
       const subtasks = await ctx.db
@@ -139,6 +144,49 @@ export const updateStatus = mutation({
     }
 
     await ctx.db.patch(taskId, { statusId, updatedAt: Date.now() });
+
+    // If task was just marked as Done, notify relevant members
+    if (newStatus && newStatus.name === "Done" && wasNotDone) {
+      const identity = await ctx.auth.getUserIdentity();
+      const me = identity
+        ? await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q: any) =>
+              q.eq("clerkId", identity.subject)
+            )
+            .first()
+        : null;
+
+      // Get all group members with owner or scrum_master role
+      const groupMembers = await ctx.db
+        .query("groupMembers")
+        .withIndex("by_group", (q: any) => q.eq("groupId", task.groupId))
+        .collect();
+
+      const relevantMembers = groupMembers.filter(
+        (member: any) =>
+          (member.role === "owner" || member.role === "scrum_master") &&
+          member.userId !== me?._id // Don't notify the person who completed it
+      );
+
+      // Create notifications for relevant members
+      for (const member of relevantMembers) {
+        await ctx.db.insert("notifications", {
+          userId: member.userId,
+          type: "task_completed",
+          encryptedTitle: "Task Completed",
+          encryptedMessage: me
+            ? `${me.name} marked a task as done`
+            : "A task was marked as done",
+          relatedTaskId: taskId,
+          relatedGroupId: task.groupId,
+          relatedUserId: me?._id,
+          isRead: false,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
     return { success: true };
   },
 });
@@ -413,6 +461,22 @@ export const delegateTask = mutation({
       currentAssignee: args.assignToUserId,
       updatedAt: Date.now(),
     });
+
+    // Create notification for the assignee
+    const assignee = await ctx.db.get(args.assignToUserId);
+    if (assignee) {
+      await ctx.db.insert("notifications", {
+        userId: args.assignToUserId,
+        type: "task_delegated",
+        encryptedTitle: "New Task Assigned",
+        encryptedMessage: `${me.name} delegated a task to you`,
+        relatedTaskId: args.taskId,
+        relatedGroupId: task.groupId,
+        relatedUserId: me._id,
+        isRead: false,
+        createdAt: Date.now(),
+      });
+    }
 
     return await ctx.db.get(args.taskId);
   },

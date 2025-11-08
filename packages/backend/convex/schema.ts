@@ -169,7 +169,8 @@ export default defineSchema({
       v.literal("subtask_completed"),
       v.literal("deadline_approaching"),
       v.literal("group_invite"),
-      v.literal("mention")
+      v.literal("mention"),
+      v.literal("task_delegated")
     ),
     relatedTaskId: v.optional(v.id("tasks")),
     relatedGroupId: v.optional(v.id("groups")),
