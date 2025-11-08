@@ -28,6 +28,7 @@ const COLORS = [
 
 export default function GroupsScreen() {
   const groups = useQuery(api.groups.myGroups);
+  const canCreate = useQuery(api.users.canCreateGroups);
   const createGroup = useMutation(api.groups.createGroup);
   const [creating, setCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -61,12 +62,17 @@ export default function GroupsScreen() {
         <View className="px-4 py-6">
           <View className="flex-row items-center justify-between mb-2">
             <Text className="text-3xl font-bold text-foreground">Groups</Text>
-            <TouchableOpacity
-              className="bg-primary px-4 py-2 rounded-lg"
-              onPress={() => setShowCreateModal(true)}
-            >
-              <Text className="text-primary-foreground font-semibold">New</Text>
-            </TouchableOpacity>
+            {/* Only show New button if user has permission to create groups */}
+            {canCreate && (
+              <TouchableOpacity
+                className="bg-primary px-4 py-2 rounded-lg"
+                onPress={() => setShowCreateModal(true)}
+              >
+                <Text className="text-primary-foreground font-semibold">
+                  New
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
           <Text className="text-lg text-muted-foreground mb-4">
             Manage your task groups

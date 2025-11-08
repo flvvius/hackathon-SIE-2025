@@ -42,6 +42,14 @@ export const createGroup = mutation({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
     if (!me) throw new Error("User not found");
+
+    // Check if user's defaultRole is "owner"
+    if (me.defaultRole !== "owner") {
+      throw new Error(
+        "Only users with Owner role can create groups. Please contact an administrator to be granted Owner permissions."
+      );
+    }
+
     const now = Date.now();
     const groupId = await ctx.db.insert("groups", {
       name: args.name,
@@ -211,6 +219,7 @@ export const getMembersWithUserInfo = query({
             name: user.name,
             email: user.email,
             profilePicture: user.profilePicture,
+            defaultRole: user.defaultRole,
           },
         });
       }

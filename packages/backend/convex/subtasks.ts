@@ -8,6 +8,41 @@ export const create = mutation({
     encryptedDescription: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the current user
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    // Get the parent task
+    const task = await ctx.db.get(args.parentTaskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    // Check permissions based on defaultRole
+    if (currentUser.defaultRole === "scrum_master") {
+      // Scrum masters can only create subtasks if the task is assigned to them
+      if (task.currentAssignee !== currentUser._id) {
+        throw new Error(
+          "Scrum Masters can only create subtasks for tasks that are delegated to them"
+        );
+      }
+    } else if (currentUser.defaultRole === "attendee") {
+      // Attendees cannot create subtasks
+      throw new Error("Attendees cannot create subtasks");
+    }
+    // Owners can always create subtasks (no additional check needed)
+
     const now = Date.now();
     // order = count existing
     const existing = await ctx.db
@@ -120,6 +155,90 @@ export const toggleComplete = mutation({
         updatedAt: Date.now(),
       });
     }
+    return { success: true };
+  },
+});
+
+// Delegate/assign a subtask to a user
+export const delegateSubtask = mutation({
+  args: {
+    subtaskId: v.id("subtasks"),
+    assignToUserId: v.id("users"),
+  },
+  handler: async (ctx, { subtaskId, assignToUserId }) => {
+    // Get auth identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Get current user
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!currentUser) throw new Error("User not found");
+
+    // Check if current user has scrum_master defaultRole
+    if (currentUser.defaultRole !== "scrum_master") {
+      throw new Error("Only Scrum Masters can delegate subtasks");
+    }
+
+    // Get subtask
+    const subtask = await ctx.db.get(subtaskId);
+    if (!subtask) throw new Error("Subtask not found");
+
+    // Check if trying to assign to the same user
+    if (subtask.assignedTo === assignToUserId) {
+      throw new Error("This subtask is already assigned to this user");
+    }
+
+    // Get parent task to access groupId
+    const task = await ctx.db.get(subtask.parentTaskId);
+    if (!task) throw new Error("Parent task not found");
+
+    // Get the user being assigned to
+    const assignToUser = await ctx.db.get(assignToUserId);
+    if (!assignToUser) throw new Error("User to assign not found");
+
+    // Check if assignToUser has defaultRole "attendee"
+    if (assignToUser.defaultRole !== "attendee") {
+      throw new Error(
+        "Subtasks can only be assigned to users with Attendee role"
+      );
+    }
+
+    // Check if assignToUser is a member of the group
+    const membership = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q) =>
+        q.eq("groupId", task.groupId).eq("userId", assignToUserId)
+      )
+      .first();
+
+    if (!membership) {
+      throw new Error("The selected user is not a member of this group");
+    } // Update subtask with assignedTo
+    await ctx.db.patch(subtaskId, {
+      assignedTo: assignToUserId,
+      updatedAt: Date.now(),
+    });
+
+    // Get the assigned user for notification
+    const assignedUser = await ctx.db.get(assignToUserId);
+
+    // Create notification for the assigned user
+    await ctx.db.insert("notifications", {
+      userId: assignToUserId,
+      type: "subtask_delegated",
+      encryptedTitle: "Subtask Assigned",
+      encryptedMessage: `${currentUser.name} assigned you a subtask: ${subtask.encryptedTitle}`,
+      relatedTaskId: subtask.parentTaskId,
+      relatedSubtaskId: subtaskId,
+      relatedGroupId: task.groupId,
+      relatedUserId: currentUser._id,
+      isRead: false,
+      createdAt: Date.now(),
+    });
+
     return { success: true };
   },
 });

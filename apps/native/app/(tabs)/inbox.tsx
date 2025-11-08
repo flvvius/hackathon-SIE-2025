@@ -50,6 +50,8 @@ export default function InboxScreen() {
       case "task_delegated":
       case "task_assigned":
         return "📋";
+      case "subtask_delegated":
+        return "📝";
       case "task_completed":
         return "✅";
       case "subtask_completed":

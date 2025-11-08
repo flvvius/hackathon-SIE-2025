@@ -49,10 +49,17 @@ export default function TaskDetailScreen() {
   const [showDelegateModal, setShowDelegateModal] = useState(false);
   const [selectedDelegateUser, setSelectedDelegateUser] =
     useState<Id<"users"> | null>(null);
+  const [showDelegateSubtaskModal, setShowDelegateSubtaskModal] =
+    useState(false);
+  const [selectedSubtaskId, setSelectedSubtaskId] =
+    useState<Id<"subtasks"> | null>(null);
+  const [selectedSubtaskDelegateUser, setSelectedSubtaskDelegateUser] =
+    useState<Id<"users"> | null>(null);
 
   const createSubtask = useMutation(api.subtasks.create);
   const toggleSubtaskComplete = useMutation(api.subtasks.toggleComplete);
   const delegateTask = useMutation(api.tasks.delegateTask);
+  const delegateSubtask = useMutation(api.subtasks.delegateSubtask);
 
   const handleCreateSubtask = async () => {
     if (!newSubtaskTitle.trim() || !currentUser) return;
@@ -66,9 +73,27 @@ export default function TaskDetailScreen() {
       setNewSubtaskTitle("");
       setNewSubtaskDescription("");
       setShowAddSubtask(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating subtask:", error);
-      Alert.alert("Error", "Failed to create subtask");
+      const errorMessage = error?.message || "";
+
+      if (
+        errorMessage.includes(
+          "Scrum Masters can only create subtasks for tasks that are delegated to them"
+        )
+      ) {
+        Alert.alert(
+          "Permission Denied",
+          "As a Scrum Master, you can only create subtasks for tasks that have been delegated to you."
+        );
+      } else if (errorMessage.includes("Attendees cannot create subtasks")) {
+        Alert.alert(
+          "Permission Denied",
+          "Attendees do not have permission to create subtasks."
+        );
+      } else {
+        Alert.alert("Error", errorMessage || "Failed to create subtask");
+      }
     }
   };
 
@@ -237,9 +262,67 @@ export default function TaskDetailScreen() {
     setShowDelegateModal(true);
   };
 
+  const handleOpenSubtaskDelegateModal = (subtaskId: Id<"subtasks">) => {
+    setSelectedSubtaskId(subtaskId);
+    setShowDelegateSubtaskModal(true);
+  };
+
+  const handleDelegateSubtask = async () => {
+    if (!selectedSubtaskId || !selectedSubtaskDelegateUser) {
+      Alert.alert("Error", "Please select a user to assign this subtask to.");
+      return;
+    }
+
+    try {
+      await delegateSubtask({
+        subtaskId: selectedSubtaskId,
+        assignToUserId: selectedSubtaskDelegateUser,
+      });
+      setShowDelegateSubtaskModal(false);
+      setSelectedSubtaskId(null);
+      setSelectedSubtaskDelegateUser(null);
+      Alert.alert("Success", "Subtask has been assigned successfully.");
+    } catch (error: any) {
+      console.error("Error delegating subtask:", error);
+      setShowDelegateSubtaskModal(false);
+      setSelectedSubtaskId(null);
+      setSelectedSubtaskDelegateUser(null);
+
+      const errorMessage = error?.message || "";
+      if (errorMessage.includes("Only Scrum Masters can delegate subtasks")) {
+        Alert.alert(
+          "Permission Denied",
+          "Only users with Scrum Master role can assign subtasks."
+        );
+      } else if (errorMessage.includes("already assigned to this user")) {
+        Alert.alert(
+          "Already Assigned",
+          "This subtask is already assigned to this user. Please select a different user."
+        );
+      } else if (
+        errorMessage.includes("only be assigned to users with Attendee role")
+      ) {
+        Alert.alert(
+          "Invalid Selection",
+          "Subtasks can only be assigned to users with Attendee role."
+        );
+      } else if (errorMessage.includes("not a member of this group")) {
+        Alert.alert(
+          "Invalid User",
+          "The selected user is not a member of this group."
+        );
+      } else {
+        Alert.alert("Error", errorMessage || "Failed to assign subtask.");
+      }
+    }
+  };
+
   // Get current user's role in the group
   const myMembership = groupMembers?.find((m) => m.userId === currentUser?._id);
   const myRole = myMembership?.role;
+
+  // Check if current user is a scrum master (by defaultRole)
+  const isScrumMaster = currentUser?.defaultRole === "scrum_master";
 
   // Check if task is currently assigned to the current user
   const isCurrentAssignee = taskWithFlow?.currentAssignee === currentUser?._id;
@@ -575,65 +658,122 @@ export default function TaskDetailScreen() {
               <Text className="text-foreground text-xl font-bold">
                 Subtasks
               </Text>
-              <TouchableOpacity
-                onPress={() => setShowAddSubtask(true)}
-                className="bg-primary px-4 py-2 rounded-lg"
-              >
-                <View className="flex-row items-center gap-2">
-                  <Ionicons name="add" size={20} color="white" />
-                  <Text className="text-white font-semibold">Add</Text>
-                </View>
-              </TouchableOpacity>
+              {/* Owners can always add subtasks, Scrum Masters can only add if task is assigned to them */}
+              {(myRole === "owner" ||
+                (myRole === "scrum_master" && isCurrentAssignee)) && (
+                <TouchableOpacity
+                  onPress={() => setShowAddSubtask(true)}
+                  className="bg-primary px-4 py-2 rounded-lg"
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Ionicons name="add" size={20} color="white" />
+                    <Text className="text-white font-semibold">Add</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Subtasks List */}
             {subtasks && subtasks.length > 0 ? (
               <View className="gap-2">
-                {subtasks.map((subtask) => (
-                  <TouchableOpacity
-                    key={subtask._id}
-                    onPress={() =>
-                      handleToggleSubtask(subtask._id, subtask.isCompleted)
-                    }
-                    className="bg-card border border-border rounded-lg p-4 flex-row items-start gap-3"
-                  >
-                    <View className="mt-1">
-                      <Ionicons
-                        name={
-                          subtask.isCompleted
-                            ? "checkmark-circle"
-                            : "ellipse-outline"
+                {subtasks.map((subtask) => {
+                  const assignedUser = groupMembers?.find(
+                    (m) => m.userId === subtask.assignedTo
+                  );
+                  return (
+                    <View
+                      key={subtask._id}
+                      className="bg-card border border-border rounded-lg p-4"
+                    >
+                      <TouchableOpacity
+                        onPress={() =>
+                          handleToggleSubtask(subtask._id, subtask.isCompleted)
                         }
-                        size={24}
-                        color={subtask.isCompleted ? "#10b981" : "#9ca3af"}
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Text
-                        className={`font-semibold ${
-                          subtask.isCompleted
-                            ? "text-muted-foreground line-through"
-                            : "text-card-foreground"
-                        }`}
+                        className="flex-row items-start gap-3"
                       >
-                        {(subtask as any).title || subtask.encryptedTitle}
-                      </Text>
-                      {(subtask.encryptedDescription ||
-                        (subtask as any).description) && (
-                        <Text className="text-muted-foreground text-sm mt-1">
-                          {(subtask as any).description ||
-                            subtask.encryptedDescription}
-                        </Text>
-                      )}
-                      {subtask.completedAt && (
-                        <Text className="text-green-500 text-xs mt-2">
-                          Completed{" "}
-                          {new Date(subtask.completedAt).toLocaleDateString()}
-                        </Text>
+                        <View className="mt-1">
+                          <Ionicons
+                            name={
+                              subtask.isCompleted
+                                ? "checkmark-circle"
+                                : "ellipse-outline"
+                            }
+                            size={24}
+                            color={subtask.isCompleted ? "#10b981" : "#9ca3af"}
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text
+                            className={`font-semibold ${
+                              subtask.isCompleted
+                                ? "text-muted-foreground line-through"
+                                : "text-card-foreground"
+                            }`}
+                          >
+                            {(subtask as any).title || subtask.encryptedTitle}
+                          </Text>
+                          {(subtask.encryptedDescription ||
+                            (subtask as any).description) && (
+                            <Text className="text-muted-foreground text-sm mt-1">
+                              {(subtask as any).description ||
+                                subtask.encryptedDescription}
+                            </Text>
+                          )}
+                          {subtask.completedAt && (
+                            <Text className="text-green-500 text-xs mt-2">
+                              Completed{" "}
+                              {new Date(
+                                subtask.completedAt
+                              ).toLocaleDateString()}
+                            </Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* Assigned User / Delegate Button */}
+                      {assignedUser ? (
+                        <View className="mt-3 pt-3 border-t border-border flex-row items-center gap-2">
+                          <Ionicons name="person" size={16} color="#6366f1" />
+                          <Text className="text-muted-foreground text-xs flex-1">
+                            Assigned to: {assignedUser.user.name}
+                          </Text>
+                          {isScrumMaster && (
+                            <TouchableOpacity
+                              onPress={() =>
+                                handleOpenSubtaskDelegateModal(subtask._id)
+                              }
+                              className="bg-muted px-2 py-1 rounded"
+                            >
+                              <Text className="text-foreground text-xs">
+                                Reassign
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ) : (
+                        isScrumMaster && (
+                          <View className="mt-3 pt-3 border-t border-border">
+                            <TouchableOpacity
+                              onPress={() =>
+                                handleOpenSubtaskDelegateModal(subtask._id)
+                              }
+                              className="bg-primary/10 px-3 py-2 rounded-lg flex-row items-center gap-2"
+                            >
+                              <Ionicons
+                                name="person-add"
+                                size={16}
+                                color="#6366f1"
+                              />
+                              <Text className="text-primary text-sm font-medium">
+                                Assign to User
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )
                       )}
                     </View>
-                  </TouchableOpacity>
-                ))}
+                  );
+                })}
               </View>
             ) : (
               <View className="bg-card border border-border rounded-lg p-8 items-center">
@@ -744,56 +884,210 @@ export default function TaskDetailScreen() {
         transparent
         onRequestClose={() => setShowDelegateModal(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          className="flex-1"
-        >
+        <View className="flex-1 bg-black/50 justify-end">
           <TouchableOpacity
-            className="flex-1 bg-black/50 justify-end"
+            className="flex-1"
             activeOpacity={1}
-            onPress={() => setShowDelegateModal(false)}
+            onPress={() => {
+              setShowDelegateModal(false);
+              setSelectedDelegateUser(null);
+            }}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
           >
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <View className="bg-background rounded-t-3xl pt-6 px-6 pb-8 max-h-[80%]">
-                <View className="flex-row items-center justify-between mb-6">
-                  <Text className="text-foreground text-xl font-bold">
-                    Delegate Task
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setShowDelegateModal(false);
-                      setSelectedDelegateUser(null);
-                    }}
-                  >
-                    <Ionicons name="close" size={24} color="#6b7280" />
-                  </TouchableOpacity>
-                </View>
+            <View className="bg-background rounded-t-3xl max-h-[85vh]">
+              {/* Header */}
+              <View className="flex-row items-center justify-between px-6 pt-6 pb-4 border-b border-border">
+                <Text className="text-foreground text-xl font-bold">
+                  Delegate Task
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowDelegateModal(false);
+                    setSelectedDelegateUser(null);
+                  }}
+                  className="h-8 w-8 items-center justify-center rounded-full bg-muted"
+                >
+                  <Ionicons name="close" size={20} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
 
-                <Text className="text-muted-foreground mb-4">
+              {/* Description */}
+              <View className="px-6 pt-4">
+                <Text className="text-muted-foreground text-sm">
                   {myRole === "owner"
                     ? "Select a Scrum Master or Attendee to delegate this task to:"
                     : myRole === "scrum_master" && isCurrentAssignee
                       ? "Select an Attendee to delegate this task to:"
                       : "You can only delegate tasks that are assigned to you."}
                 </Text>
+              </View>
 
-                <ScrollView
-                  className="mb-4"
-                  showsVerticalScrollIndicator={false}
+              {/* User List */}
+              <ScrollView
+                className="px-6 py-4"
+                showsVerticalScrollIndicator={false}
+              >
+                <View className="gap-3">
+                  {availableForDelegation?.map((member) => (
+                    <TouchableOpacity
+                      key={member.userId}
+                      className={`flex-row items-center gap-3 p-3 rounded-lg border ${
+                        selectedDelegateUser === member.userId
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-card"
+                      }`}
+                      onPress={() => setSelectedDelegateUser(member.userId)}
+                    >
+                      <View className="h-10 w-10 rounded-full bg-primary/20 items-center justify-center">
+                        <Text className="text-primary font-bold">
+                          {member.user.name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-foreground font-medium">
+                          {member.user.name}
+                        </Text>
+                        <Text className="text-muted-foreground text-xs">
+                          {member.user.email}
+                        </Text>
+                        <View
+                          className={`mt-1 px-2 py-0.5 rounded self-start ${
+                            member.role === "scrum_master"
+                              ? "bg-orange-500/20"
+                              : "bg-blue-500/20"
+                          }`}
+                        >
+                          <Text
+                            className={`text-xs font-semibold ${
+                              member.role === "scrum_master"
+                                ? "text-orange-600"
+                                : "text-blue-600"
+                            }`}
+                          >
+                            {member.role === "scrum_master"
+                              ? "Scrum Master"
+                              : "Attendee"}
+                          </Text>
+                        </View>
+                      </View>
+                      {selectedDelegateUser === member.userId && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={24}
+                          color="#6366f1"
+                        />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                  {(!availableForDelegation ||
+                    availableForDelegation.length === 0) && (
+                    <View className="bg-card border border-border rounded-lg p-4">
+                      <Text className="text-muted-foreground text-center">
+                        No members available for delegation
+                      </Text>
+                      <Text className="text-muted-foreground text-xs text-center mt-2">
+                        {delegationLimitReached
+                          ? "Maximum delegation limit reached (3 max)"
+                          : "All eligible members have already been assigned this task"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+
+              {/* Action Button */}
+              <View className="px-6 pb-6 pt-4 border-t border-border">
+                <TouchableOpacity
+                  className={`py-4 rounded-xl ${
+                    selectedDelegateUser ? "bg-primary" : "bg-muted"
+                  }`}
+                  onPress={handleDelegateTask}
+                  disabled={!selectedDelegateUser}
                 >
-                  <View className="gap-2">
-                    {availableForDelegation?.map((member) => (
+                  <Text className="text-primary-foreground text-center font-semibold text-base">
+                    Delegate Task
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Delegate Subtask Modal */}
+      <Modal
+        visible={showDelegateSubtaskModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowDelegateSubtaskModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <TouchableOpacity
+            className="flex-1"
+            activeOpacity={1}
+            onPress={() => {
+              setShowDelegateSubtaskModal(false);
+              setSelectedSubtaskDelegateUser(null);
+            }}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <View className="bg-background rounded-t-3xl max-h-[85vh]">
+              {/* Header */}
+              <View className="flex-row items-center justify-between px-6 pt-6 pb-4 border-b border-border">
+                <Text className="text-foreground text-xl font-bold">
+                  Assign Subtask
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowDelegateSubtaskModal(false);
+                    setSelectedSubtaskDelegateUser(null);
+                  }}
+                  className="h-8 w-8 items-center justify-center rounded-full bg-muted"
+                >
+                  <Ionicons name="close" size={20} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Description */}
+              <View className="px-6 pt-4">
+                <Text className="text-muted-foreground text-sm">
+                  Select an attendee to assign this subtask to:
+                </Text>
+              </View>
+
+              {/* User List */}
+              <ScrollView
+                className="px-6 py-4"
+                showsVerticalScrollIndicator={false}
+              >
+                <View className="gap-3">
+                  {groupMembers
+                    ?.filter((member) => {
+                      // Only show attendees (by defaultRole)
+                      if (member.user.defaultRole !== "attendee") return false;
+                      // Don't show the currently assigned user
+                      const currentSubtask = subtasks?.find(
+                        (s) => s._id === selectedSubtaskId
+                      );
+                      if (currentSubtask?.assignedTo === member.userId)
+                        return false;
+                      return true;
+                    })
+                    .map((member) => (
                       <TouchableOpacity
                         key={member.userId}
                         className={`flex-row items-center gap-3 p-3 rounded-lg border ${
-                          selectedDelegateUser === member.userId
+                          selectedSubtaskDelegateUser === member.userId
                             ? "border-primary bg-primary/10"
                             : "border-border bg-card"
                         }`}
-                        onPress={() => setSelectedDelegateUser(member.userId)}
+                        onPress={() =>
+                          setSelectedSubtaskDelegateUser(member.userId)
+                        }
                       >
                         <View className="h-10 w-10 rounded-full bg-primary/20 items-center justify-center">
                           <Text className="text-primary font-bold">
@@ -809,25 +1103,31 @@ export default function TaskDetailScreen() {
                           </Text>
                           <View
                             className={`mt-1 px-2 py-0.5 rounded self-start ${
-                              member.role === "scrum_master"
-                                ? "bg-orange-500/20"
-                                : "bg-blue-500/20"
+                              member.role === "owner"
+                                ? "bg-red-500/20"
+                                : member.role === "scrum_master"
+                                  ? "bg-orange-500/20"
+                                  : "bg-blue-500/20"
                             }`}
                           >
                             <Text
                               className={`text-xs font-semibold ${
-                                member.role === "scrum_master"
-                                  ? "text-orange-600"
-                                  : "text-blue-600"
+                                member.role === "owner"
+                                  ? "text-red-600"
+                                  : member.role === "scrum_master"
+                                    ? "text-orange-600"
+                                    : "text-blue-600"
                               }`}
                             >
-                              {member.role === "scrum_master"
-                                ? "Scrum Master"
-                                : "Attendee"}
+                              {member.role === "owner"
+                                ? "Owner"
+                                : member.role === "scrum_master"
+                                  ? "Scrum Master"
+                                  : "Attendee"}
                             </Text>
                           </View>
                         </View>
-                        {selectedDelegateUser === member.userId && (
+                        {selectedSubtaskDelegateUser === member.userId && (
                           <Ionicons
                             name="checkmark-circle"
                             size={24}
@@ -836,37 +1136,47 @@ export default function TaskDetailScreen() {
                         )}
                       </TouchableOpacity>
                     ))}
-                    {(!availableForDelegation ||
-                      availableForDelegation.length === 0) && (
-                      <View className="bg-card border border-border rounded-lg p-4">
-                        <Text className="text-muted-foreground text-center">
-                          No members available for delegation
-                        </Text>
-                        <Text className="text-muted-foreground text-xs text-center mt-2">
-                          {delegationLimitReached
-                            ? "Maximum delegation limit reached (3 max)"
-                            : "All eligible members have already been assigned this task"}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </ScrollView>
+                  {groupMembers?.filter((member) => {
+                    if (member.user.defaultRole !== "attendee") return false;
+                    const currentSubtask = subtasks?.find(
+                      (s) => s._id === selectedSubtaskId
+                    );
+                    if (currentSubtask?.assignedTo === member.userId)
+                      return false;
+                    return true;
+                  }).length === 0 && (
+                    <View className="bg-card border border-border rounded-lg p-4">
+                      <Text className="text-muted-foreground text-center">
+                        No attendees available
+                      </Text>
+                      <Text className="text-muted-foreground text-xs text-center mt-2">
+                        {subtasks?.find((s) => s._id === selectedSubtaskId)
+                          ?.assignedTo
+                          ? "This subtask is already assigned. There are no other attendees available."
+                          : "There are no users with Attendee role in this group."}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
 
+              {/* Action Button */}
+              <View className="px-6 pb-6 pt-4 border-t border-border">
                 <TouchableOpacity
-                  className={`py-3 rounded-lg ${
-                    selectedDelegateUser ? "bg-primary" : "bg-muted"
+                  className={`py-4 rounded-xl ${
+                    selectedSubtaskDelegateUser ? "bg-primary" : "bg-muted"
                   }`}
-                  onPress={handleDelegateTask}
-                  disabled={!selectedDelegateUser}
+                  onPress={handleDelegateSubtask}
+                  disabled={!selectedSubtaskDelegateUser}
                 >
-                  <Text className="text-primary-foreground text-center font-semibold">
-                    Delegate Task
+                  <Text className="text-primary-foreground text-center font-semibold text-base">
+                    Assign Subtask
                   </Text>
                 </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     </Container>
   );

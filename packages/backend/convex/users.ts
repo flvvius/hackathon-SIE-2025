@@ -36,6 +36,7 @@ export const upsertCurrentUser = mutation({
       profilePicture: picture,
       description: undefined,
       contact: email || undefined,
+      canCreateGroups: true, // Grant group creation permission to new users by default
       publicKey: undefined, // filled client-side later for E2E encryption
       createdAt: now,
       updatedAt: now,
@@ -136,5 +137,39 @@ export const getAllUsers = query({
       email: u.email,
       profilePicture: u.profilePicture,
     }));
+  },
+});
+
+// Check if current user can create groups
+export const canCreateGroups = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return false;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return false;
+    // Only users with "owner" defaultRole can create groups
+    return user.defaultRole === "owner";
+  },
+});
+
+// Grant group creation permission (admin only - for now, any user can call this)
+// In production, you'd want to restrict this to actual admins
+export const grantGroupCreationPermission = mutation({
+  args: {
+    userId: v.id("users"),
+    canCreate: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    // In production, check if current user is an admin here
+    await ctx.db.patch(args.userId, {
+      canCreateGroups: args.canCreate,
+      updatedAt: Date.now(),
+    });
+    return { success: true };
   },
 });

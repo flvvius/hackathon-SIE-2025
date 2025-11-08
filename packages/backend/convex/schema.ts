@@ -18,6 +18,8 @@ export default defineSchema({
         v.literal("attendee")
       )
     ),
+    // Global permission to create new groups
+    canCreateGroups: v.optional(v.boolean()),
     publicKey: v.optional(v.string()), // Cheie publică pentru encriptare end-to-end (optional for MVP)
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -170,11 +172,13 @@ export default defineSchema({
       v.literal("deadline_approaching"),
       v.literal("group_invite"),
       v.literal("mention"),
-      v.literal("task_delegated")
+      v.literal("task_delegated"),
+      v.literal("subtask_delegated")
     ),
     relatedTaskId: v.optional(v.id("tasks")),
     relatedGroupId: v.optional(v.id("groups")),
     relatedUserId: v.optional(v.id("users")), // Cine a generat notificarea
+    relatedSubtaskId: v.optional(v.id("subtasks")), // For subtask-related notifications
 
     encryptedTitle: v.string(), // Titlu notificare encriptat
     encryptedMessage: v.string(), // Mesaj encriptat

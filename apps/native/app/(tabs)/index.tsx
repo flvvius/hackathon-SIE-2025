@@ -9,12 +9,16 @@ import { router } from "expo-router";
 export default function Home() {
   const { user } = useUser();
   const groupsWithStats = useQuery(api.groups.myGroupsWithStats);
+  const canCreate = useQuery(api.users.canCreateGroups);
 
   // Calculate overall stats
   const totalGroups = groupsWithStats?.length || 0;
-  const totalTasks = groupsWithStats?.reduce((sum, g) => sum + g.stats.total, 0) || 0;
-  const completedTasks = groupsWithStats?.reduce((sum, g) => sum + g.stats.completed, 0) || 0;
-  const pendingTasks = groupsWithStats?.reduce((sum, g) => sum + g.stats.pending, 0) || 0;
+  const totalTasks =
+    groupsWithStats?.reduce((sum, g) => sum + g.stats.total, 0) || 0;
+  const completedTasks =
+    groupsWithStats?.reduce((sum, g) => sum + g.stats.completed, 0) || 0;
+  const pendingTasks =
+    groupsWithStats?.reduce((sum, g) => sum + g.stats.pending, 0) || 0;
 
   return (
     <Container>
@@ -32,31 +36,49 @@ export default function Home() {
           <View className="flex-row gap-3 mb-6">
             <View className="flex-1 bg-card border border-border rounded-xl p-4">
               <Text className="text-muted-foreground text-sm mb-1">Groups</Text>
-              <Text className="text-foreground text-2xl font-bold">{totalGroups}</Text>
+              <Text className="text-foreground text-2xl font-bold">
+                {totalGroups}
+              </Text>
             </View>
             <View className="flex-1 bg-card border border-border rounded-xl p-4">
-              <Text className="text-muted-foreground text-sm mb-1">Total Tasks</Text>
-              <Text className="text-foreground text-2xl font-bold">{totalTasks}</Text>
+              <Text className="text-muted-foreground text-sm mb-1">
+                Total Tasks
+              </Text>
+              <Text className="text-foreground text-2xl font-bold">
+                {totalTasks}
+              </Text>
             </View>
           </View>
 
           <View className="flex-row gap-3 mb-6">
             <View className="flex-1 bg-card border border-border rounded-xl p-4">
-              <Text className="text-muted-foreground text-sm mb-1">Pending</Text>
-              <Text className="text-orange-500 text-2xl font-bold">{pendingTasks}</Text>
+              <Text className="text-muted-foreground text-sm mb-1">
+                Pending
+              </Text>
+              <Text className="text-orange-500 text-2xl font-bold">
+                {pendingTasks}
+              </Text>
             </View>
             <View className="flex-1 bg-card border border-border rounded-xl p-4">
-              <Text className="text-muted-foreground text-sm mb-1">Completed</Text>
-              <Text className="text-green-500 text-2xl font-bold">{completedTasks}</Text>
+              <Text className="text-muted-foreground text-sm mb-1">
+                Completed
+              </Text>
+              <Text className="text-green-500 text-2xl font-bold">
+                {completedTasks}
+              </Text>
             </View>
           </View>
 
           {/* Recent Groups */}
           <View className="mb-6">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-foreground text-xl font-semibold">Your Groups</Text>
+              <Text className="text-foreground text-xl font-semibold">
+                Your Groups
+              </Text>
               <TouchableOpacity onPress={() => router.push("/(tabs)/groups")}>
-                <Text className="text-primary text-sm font-medium">View All</Text>
+                <Text className="text-primary text-sm font-medium">
+                  View All
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -77,7 +99,10 @@ export default function Home() {
                         {g.name}
                       </Text>
                       {g.description && (
-                        <Text className="text-muted-foreground text-sm" numberOfLines={1}>
+                        <Text
+                          className="text-muted-foreground text-sm"
+                          numberOfLines={1}
+                        >
                           {g.description}
                         </Text>
                       )}
@@ -97,12 +122,20 @@ export default function Home() {
                       </Text>
                     </View>
                     <View className="flex-row items-center gap-1">
-                      <Ionicons name="checkmark-circle-outline" size={16} color="#10b981" />
-                      <Text className="text-green-500 text-sm">{g.stats.completed}</Text>
+                      <Ionicons
+                        name="checkmark-circle-outline"
+                        size={16}
+                        color="#10b981"
+                      />
+                      <Text className="text-green-500 text-sm">
+                        {g.stats.completed}
+                      </Text>
                     </View>
                     <View className="flex-row items-center gap-1">
                       <Ionicons name="time-outline" size={16} color="#f59e0b" />
-                      <Text className="text-orange-500 text-sm">{g.stats.pending}</Text>
+                      <Text className="text-orange-500 text-sm">
+                        {g.stats.pending}
+                      </Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -114,16 +147,20 @@ export default function Home() {
                     No groups yet
                   </Text>
                   <Text className="text-muted-foreground text-sm text-center mb-4">
-                    Create your first group to start organizing tasks
+                    {canCreate
+                      ? "Create your first group to start organizing tasks"
+                      : "You don't have access to any groups yet"}
                   </Text>
-                  <TouchableOpacity
-                    className="bg-primary px-6 py-2 rounded-lg"
-                    onPress={() => router.push("/(tabs)/groups")}
-                  >
-                    <Text className="text-primary-foreground font-semibold">
-                      Create Group
-                    </Text>
-                  </TouchableOpacity>
+                  {canCreate && (
+                    <TouchableOpacity
+                      className="bg-primary px-6 py-2 rounded-lg"
+                      onPress={() => router.push("/(tabs)/groups")}
+                    >
+                      <Text className="text-primary-foreground font-semibold">
+                        Create Group
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
             </View>

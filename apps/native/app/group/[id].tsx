@@ -233,8 +233,8 @@ export default function GroupDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Create Task Button - Only for Owners and Scrum Masters */}
-          {(myRole === "owner" || myRole === "scrum_master") && (
+          {/* Create Task Button - Only for Owners */}
+          {myRole === "owner" && (
             <TouchableOpacity
               className="bg-primary px-6 py-3 rounded-lg mb-4"
               onPress={() => setShowCreateTask(true)}
