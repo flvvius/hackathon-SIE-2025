@@ -1,6 +1,15 @@
 // Libsodium bindings for React Native
-import sodium from "react-native-libsodium";
+import { Platform } from "react-native";
 import { getItem, saveItem, SECURE_KEYS } from "./secure-store";
+
+// Conditional import based on platform
+let sodium: any = null;
+
+// Only import sodium on native platforms
+if (Platform.OS === "ios" || Platform.OS === "android") {
+  // Dynamic import for native platforms only
+  sodium = require("react-native-libsodium").default;
+}
 
 export interface KeyPair {
   publicKey: string; // base64
@@ -8,19 +17,38 @@ export interface KeyPair {
 }
 
 async function ensureSodium() {
+  if (!sodium) {
+    // For web, we'll use a mock implementation that just stores/retrieves plain text
+    // In production, you'd want to use libsodium-wrappers for web
+    console.warn(
+      "Crypto not available on web platform. Using mock implementation for development."
+    );
+    return null;
+  }
+
   // Initialize sodium if not yet
-  // libsodium-wrappers exports a ready promise; but we can call init by accessing sodium.ready
-  // react-native-libsodium exposes a ready promise
   // @ts-ignore
-  if ((sodium as any).ready) {
+  if (sodium.ready) {
     // @ts-ignore
-    await (sodium as any).ready;
+    await sodium.ready;
   }
   return sodium;
 }
 
 export async function generateAndPersistKeyPair(): Promise<KeyPair> {
   const s = await ensureSodium();
+
+  if (!s) {
+    // Mock implementation for web
+    const mockKeyPair = {
+      publicKey: btoa("mock-public-key-" + Date.now()),
+      privateKey: btoa("mock-private-key-" + Date.now()),
+    };
+    await saveItem(SECURE_KEYS.publicKey, mockKeyPair.publicKey);
+    await saveItem(SECURE_KEYS.privateKey, mockKeyPair.privateKey);
+    return mockKeyPair;
+  }
+
   const { publicKey, privateKey } = s.crypto_box_keypair();
   const pub64 = s.to_base64(publicKey);
   const priv64 = s.to_base64(privateKey);
@@ -42,6 +70,16 @@ export async function encryptForRecipients(
   senderPrivateKey: string
 ): Promise<{ cipherTexts: string[]; nonce: string }> {
   const s = await ensureSodium();
+
+  if (!s) {
+    // Mock implementation for web - just return base64 encoded plaintext
+    const mockCipherTexts = recipientPublicKeys.map(() => btoa(plaintext));
+    return {
+      cipherTexts: mockCipherTexts,
+      nonce: btoa("mock-nonce"),
+    };
+  }
+
   const nonce = s.randombytes_buf(s.crypto_box_NONCEBYTES);
   const nonceB64 = s.to_base64(nonce);
   const senderPrivUint8 = s.from_base64(senderPrivateKey);
@@ -66,6 +104,16 @@ export async function decryptFromSender(
   recipientPrivateKeyB64: string
 ): Promise<string> {
   const s = await ensureSodium();
+
+  if (!s) {
+    // Mock implementation for web - just decode base64
+    try {
+      return atob(cipherTextB64);
+    } catch {
+      return cipherTextB64;
+    }
+  }
+
   const cipher = s.from_base64(cipherTextB64);
   const nonce = s.from_base64(nonceB64);
   const senderPub = s.from_base64(senderPublicKeyB64);
@@ -77,6 +125,12 @@ export async function decryptFromSender(
 // Simple symmetric encryption for task/group data (to be wrapped per user)
 export async function generateSymmetricKey(): Promise<string> {
   const s = await ensureSodium();
+
+  if (!s) {
+    // Mock implementation for web
+    return btoa("mock-symmetric-key-" + Date.now());
+  }
+
   const key = s.randombytes_buf(s.crypto_secretbox_KEYBYTES);
   return s.to_base64(key);
 }
@@ -86,6 +140,15 @@ export async function symmetricEncrypt(
   keyB64: string
 ): Promise<{ cipher: string; nonce: string }> {
   const s = await ensureSodium();
+
+  if (!s) {
+    // Mock implementation for web
+    return {
+      cipher: btoa(plaintext),
+      nonce: btoa("mock-nonce"),
+    };
+  }
+
   const key = s.from_base64(keyB64);
   const nonce = s.randombytes_buf(s.crypto_secretbox_NONCEBYTES);
   const cipher = s.crypto_secretbox_easy(s.from_string(plaintext), nonce, key);
@@ -98,6 +161,16 @@ export async function symmetricDecrypt(
   keyB64: string
 ): Promise<string> {
   const s = await ensureSodium();
+
+  if (!s) {
+    // Mock implementation for web
+    try {
+      return atob(cipherB64);
+    } catch {
+      return cipherB64;
+    }
+  }
+
   const key = s.from_base64(keyB64);
   const cipher = s.from_base64(cipherB64);
   const nonce = s.from_base64(nonceB64);

@@ -1,0 +1,8 @@
+{
+  "android": {
+    "package": "com.anonymous.cotask"
+  },
+  "ios": {
+    "bundleIdentifier": "com.anonymous.cotask"
+  }
+}

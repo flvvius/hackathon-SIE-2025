@@ -318,3 +318,171 @@ export const createSimple = mutation({
     return await ctx.db.get(taskId);
   },
 });
+
+// Delegate/assign a task to another user (creating assignment chain)
+export const delegateTask = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    assignToUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const me = await getMe(ctx);
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+
+    // Get current user's role in the group
+    const myMembership = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q: any) =>
+        q.eq("groupId", task.groupId).eq("userId", me._id)
+      )
+      .first();
+
+    if (!myMembership) throw new Error("You are not a member of this group");
+
+    // Get the assignee's role in the group
+    const assigneeMembership = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group_and_user", (q: any) =>
+        q.eq("groupId", task.groupId).eq("userId", args.assignToUserId)
+      )
+      .first();
+
+    if (!assigneeMembership)
+      throw new Error("Assignee is not a member of this group");
+
+    // Validation rules:
+    // - Owner can delegate to scrum_master or attendee
+    // - Scrum master can delegate to attendee ONLY if task is currently assigned to them
+    // - Attendee cannot delegate
+    const myRole = myMembership.role;
+    const assigneeRole = assigneeMembership.role;
+
+    if (myRole === "attendee") {
+      throw new Error("Attendees cannot delegate tasks");
+    }
+
+    // Scrum masters can only delegate if the task is currently assigned to them
+    if (myRole === "scrum_master") {
+      if (task.currentAssignee !== me._id) {
+        throw new Error(
+          "Scrum masters can only delegate tasks that are currently assigned to them"
+        );
+      }
+      if (assigneeRole !== "attendee") {
+        throw new Error("Scrum masters can only delegate to attendees");
+      }
+    }
+
+    // Owners can always delegate (unless other limits are reached)
+    if (myRole === "owner" && assigneeRole === "owner") {
+      throw new Error("Cannot delegate to another owner");
+    }
+
+    // Check if task is already delegated to this user
+    if (task.currentAssignee === args.assignToUserId) {
+      throw new Error("Task is already assigned to this user");
+    }
+
+    // Check if this user already received this task in the chain
+    const alreadyInChain = task.assignmentChain?.some(
+      (entry: any) => entry.assignedTo === args.assignToUserId
+    );
+    if (alreadyInChain) {
+      throw new Error("This user has already been assigned this task before");
+    }
+
+    // Limit assignment chain to max 3 delegations
+    // (Creator + 3 delegations = max 4 people in the flow)
+    if (task.assignmentChain && task.assignmentChain.length >= 3) {
+      throw new Error("Maximum delegation limit reached (3 delegations max)");
+    }
+
+    // Create new assignment chain entry
+    const newChainEntry = {
+      assignedBy: me._id,
+      assignedTo: args.assignToUserId,
+      assignerRole: myRole,
+      assigneeRole: assigneeRole,
+      timestamp: Date.now(),
+    };
+
+    // Update task with new assignment chain and current assignee
+    await ctx.db.patch(args.taskId, {
+      assignmentChain: [...(task.assignmentChain || []), newChainEntry],
+      currentAssignee: args.assignToUserId,
+      updatedAt: Date.now(),
+    });
+
+    return await ctx.db.get(args.taskId);
+  },
+});
+
+// Get task with full assignment chain and user details
+export const getTaskWithFlow = query({
+  args: { taskId: v.id("tasks") },
+  handler: async (ctx, { taskId }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) return null;
+
+    // Get creator info
+    const creator = await ctx.db.get(task.creatorId);
+
+    // Get current assignee info
+    let currentAssignee = null;
+    if (task.currentAssignee) {
+      currentAssignee = await ctx.db.get(task.currentAssignee);
+    }
+
+    // Get assignment chain with user details
+    let assignmentChainWithUsers = null;
+    if (task.assignmentChain && task.assignmentChain.length > 0) {
+      assignmentChainWithUsers = await Promise.all(
+        task.assignmentChain.map(async (entry: any) => {
+          const assignedBy = await ctx.db.get(entry.assignedBy);
+          const assignedTo = await ctx.db.get(entry.assignedTo);
+          return {
+            ...entry,
+            assignedByUser: assignedBy
+              ? {
+                  _id: assignedBy._id,
+                  name: (assignedBy as any).name,
+                  email: (assignedBy as any).email,
+                  profilePicture: (assignedBy as any).profilePicture,
+                }
+              : null,
+            assignedToUser: assignedTo
+              ? {
+                  _id: assignedTo._id,
+                  name: (assignedTo as any).name,
+                  email: (assignedTo as any).email,
+                  profilePicture: (assignedTo as any).profilePicture,
+                }
+              : null,
+          };
+        })
+      );
+    }
+
+    return {
+      ...task,
+      creator: creator
+        ? {
+            _id: creator._id,
+            name: (creator as any).name,
+            email: (creator as any).email,
+            profilePicture: (creator as any).profilePicture,
+          }
+        : null,
+      currentAssigneeUser: currentAssignee
+        ? {
+            _id: currentAssignee._id,
+            name: (currentAssignee as any).name,
+            email: (currentAssignee as any).email,
+            profilePicture: (currentAssignee as any).profilePicture,
+          }
+        : null,
+      assignmentChainWithUsers,
+    };
+  },
+});

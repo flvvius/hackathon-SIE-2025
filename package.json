@@ -13,11 +13,18 @@
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
     "dev:server": "turbo -F @coTask/backend dev",
-    "dev:setup": "turbo -F @coTask/backend dev:setup"
+    "dev:setup": "turbo -F @coTask/backend dev:setup",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
-  "dependencies": {},
+  "dependencies": {
+    "expo": "~54.0.23",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
   "devDependencies": {
     "turbo": "^2.5.4"
   },
-  "packageManager": "pnpm@10.20.0"
+  "packageManager": "pnpm@10.20.0",
+  "version": "1.0.0"
 }

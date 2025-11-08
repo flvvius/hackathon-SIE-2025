@@ -93,6 +93,20 @@ export default defineSchema({
       })
     ),
 
+    // Assignment Flow - tracks the delegation chain
+    assignmentChain: v.optional(
+      v.array(
+        v.object({
+          assignedBy: v.id("users"), // Who delegated/assigned
+          assignedTo: v.id("users"), // Who received the assignment
+          assignerRole: v.string(), // Role of the person who assigned (owner/scrum_master)
+          assigneeRole: v.string(), // Role of the person who received (scrum_master/attendee)
+          timestamp: v.number(),
+        })
+      )
+    ),
+    currentAssignee: v.optional(v.id("users")), // Current person responsible for the task
+
     // Metadata neencriptată pentru indexare
     creatorId: v.id("users"),
     isCompleted: v.boolean(), // Auto-completat când toate subtask-urile sunt complete

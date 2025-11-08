@@ -26,20 +26,28 @@ export default function TaskDetailScreen() {
   const taskId = id as Id<"tasks">;
   const { user: clerkUser } = useUser();
 
+  const taskWithFlow = useQuery(api.tasks.getTaskWithFlow, { taskId });
   const tasks = useQuery(api.tasks.listByGroup, {
     groupId: groupId as Id<"groups">,
   });
   const task = tasks?.find((t) => t._id === taskId);
   const subtasks = useQuery(api.subtasks.list, { parentTaskId: taskId });
   const currentUser = useQuery(api.users.getCurrentUser);
+  const groupMembers = useQuery(api.groups.getMembersWithUserInfo, {
+    groupId: groupId as Id<"groups">,
+  });
 
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newSubtaskDescription, setNewSubtaskDescription] = useState("");
+  const [showDelegateModal, setShowDelegateModal] = useState(false);
+  const [selectedDelegateUser, setSelectedDelegateUser] =
+    useState<Id<"users"> | null>(null);
 
   const createSubtask = useMutation(api.subtasks.create);
   const toggleSubtaskComplete = useMutation(api.subtasks.toggleComplete);
   const toggleSelfAssignment = useMutation(api.tasks.toggleSelfAssignment);
+  const delegateTask = useMutation(api.tasks.delegateTask);
 
   const isAssigned =
     currentUser &&
@@ -90,6 +98,193 @@ export default function TaskDetailScreen() {
       Alert.alert("Error", "Failed to update subtask");
     }
   };
+
+  const handleDelegateTask = async () => {
+    if (!selectedDelegateUser) {
+      Alert.alert(
+        "No User Selected",
+        "Please select a user to delegate this task to."
+      );
+      return;
+    }
+
+    try {
+      await delegateTask({
+        taskId,
+        assignToUserId: selectedDelegateUser,
+      });
+      setShowDelegateModal(false);
+      setSelectedDelegateUser(null);
+      Alert.alert(
+        "Task Delegated",
+        "The task has been successfully delegated."
+      );
+    } catch (error: any) {
+      console.error("Error delegating task:", error);
+
+      // Close modal first to show alert properly
+      setShowDelegateModal(false);
+      setSelectedDelegateUser(null);
+
+      // Parse error message and show user-friendly alerts
+      const errorMessage = error?.message || error?.data?.message || "";
+
+      if (
+        errorMessage.includes("already assigned to this user") ||
+        errorMessage.includes("Task is already assigned")
+      ) {
+        Alert.alert(
+          "Already Assigned",
+          "This task is currently assigned to the selected user. Please choose a different user."
+        );
+      } else if (
+        errorMessage.includes("already been assigned this task") ||
+        errorMessage.includes("has already been assigned")
+      ) {
+        Alert.alert(
+          "Duplicate Delegation",
+          "This user has already been assigned this task previously in the delegation chain. Please choose a different user."
+        );
+      } else if (
+        errorMessage.includes("Maximum delegation limit") ||
+        errorMessage.includes("maximum number of delegations")
+      ) {
+        Alert.alert(
+          "Delegation Limit Reached",
+          "This task has reached the maximum number of delegations (3). No further delegations are allowed."
+        );
+      } else if (errorMessage.includes("not a member of this group")) {
+        Alert.alert(
+          "Invalid User",
+          "The selected user is not a member of this group."
+        );
+      } else if (errorMessage.includes("Attendees cannot delegate")) {
+        Alert.alert(
+          "Permission Denied",
+          "Attendees do not have permission to delegate tasks."
+        );
+      } else if (
+        errorMessage.includes("currently assigned to them") ||
+        errorMessage.includes("only delegate tasks that are")
+      ) {
+        Alert.alert(
+          "Not Assigned to You",
+          "As a Scrum Master, you can only delegate tasks that are currently assigned to you."
+        );
+      } else if (errorMessage.includes("only delegate to attendees")) {
+        Alert.alert(
+          "Invalid Delegation",
+          "Scrum Masters can only delegate tasks to Attendees."
+        );
+      } else if (errorMessage.includes("Cannot delegate to another owner")) {
+        Alert.alert(
+          "Invalid Delegation",
+          "Tasks cannot be delegated to another Owner."
+        );
+      } else if (errorMessage.includes("Not authenticated")) {
+        Alert.alert(
+          "Authentication Error",
+          "You must be signed in to delegate tasks. Please sign in and try again."
+        );
+      } else if (errorMessage.includes("Task not found")) {
+        Alert.alert(
+          "Task Not Found",
+          "This task no longer exists or has been deleted."
+        );
+      } else {
+        // Generic error for unexpected cases
+        // Clean up the error message by removing technical details
+        let cleanMessage = errorMessage;
+
+        // Remove Convex error prefix if present
+        if (cleanMessage.includes("Uncaught Error:")) {
+          cleanMessage =
+            cleanMessage.split("Uncaught Error:")[1]?.trim() || cleanMessage;
+        }
+
+        // Remove "at handler" and everything after
+        if (cleanMessage.includes("at handler")) {
+          cleanMessage =
+            cleanMessage.split("at handler")[0]?.trim() || cleanMessage;
+        }
+
+        Alert.alert(
+          "Delegation Failed",
+          cleanMessage ||
+            "An unexpected error occurred while delegating the task. Please try again."
+        );
+      }
+    }
+  };
+
+  const handleOpenDelegateModal = () => {
+    // Validate before opening modal
+    if (delegationLimitReached) {
+      Alert.alert(
+        "Delegation Limit Reached",
+        "This task has reached the maximum number of delegations (3). No further delegations are allowed."
+      );
+      return;
+    }
+
+    if (myRole === "scrum_master" && !isCurrentAssignee) {
+      Alert.alert(
+        "Not Assigned to You",
+        "As a Scrum Master, you can only delegate tasks that are currently assigned to you."
+      );
+      return;
+    }
+
+    if (!availableForDelegation || availableForDelegation.length === 0) {
+      Alert.alert(
+        "No Available Users",
+        "There are no users available to delegate this task to. All eligible members have already been assigned this task."
+      );
+      return;
+    }
+
+    setShowDelegateModal(true);
+  };
+
+  // Get current user's role in the group
+  const myMembership = groupMembers?.find((m) => m.userId === currentUser?._id);
+  const myRole = myMembership?.role;
+
+  // Check if task is currently assigned to the current user
+  const isCurrentAssignee = taskWithFlow?.currentAssignee === currentUser?._id;
+
+  // Determine if user can delegate:
+  // - Owners can always delegate (unless limit reached)
+  // - Scrum Masters can only delegate if task is currently assigned to them
+  const canDelegate =
+    myRole === "owner" || (myRole === "scrum_master" && isCurrentAssignee);
+
+  // Check if delegation limit reached (max 3 delegations)
+  const delegationCount = taskWithFlow?.assignmentChain?.length || 0;
+  const delegationLimitReached = delegationCount >= 3;
+
+  // Get list of users who already received this task
+  const usersInChain = new Set([
+    taskWithFlow?.creatorId, // Creator
+    ...(taskWithFlow?.assignmentChain?.map((entry: any) => entry.assignedTo) ||
+      []),
+  ]);
+
+  // Filter users for delegation based on current user's role
+  const availableForDelegation = groupMembers?.filter((member) => {
+    if (member.userId === currentUser?._id) return false; // Can't delegate to self
+    if (usersInChain.has(member.userId)) return false; // Can't delegate to someone already in chain
+
+    if (myRole === "owner") {
+      // Owners can delegate to scrum masters or attendees
+      return member.role === "scrum_master" || member.role === "attendee";
+    }
+    if (myRole === "scrum_master") {
+      // Scrum masters can only delegate to attendees
+      return member.role === "attendee";
+    }
+    return false;
+  });
 
   const priorityColors = {
     low: "#64748b",
@@ -191,6 +386,187 @@ export default function TaskDetailScreen() {
               )}
             </View>
           </View>
+
+          {/* Assignment Flow Section */}
+          {taskWithFlow && (
+            <View className="bg-card border border-border rounded-lg p-4 mb-6">
+              <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-foreground font-semibold text-lg">
+                  Assignment Flow
+                </Text>
+                {/* Debug: Show role info */}
+                <View className="flex-row items-center gap-2">
+                  {myRole && (
+                    <View className="bg-muted px-2 py-1 rounded">
+                      <Text className="text-xs text-foreground">
+                        Role: {myRole}
+                      </Text>
+                    </View>
+                  )}
+                  {canDelegate && !delegationLimitReached && (
+                    <TouchableOpacity
+                      onPress={handleOpenDelegateModal}
+                      className="bg-primary px-3 py-1.5 rounded-lg"
+                    >
+                      <Text className="text-white text-xs font-semibold">
+                        Delegate
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {canDelegate && delegationLimitReached && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert(
+                          "Delegation Limit Reached",
+                          "This task has reached the maximum number of delegations (3). No further delegations are allowed."
+                        );
+                      }}
+                    >
+                      <View className="bg-muted px-3 py-1.5 rounded-lg">
+                        <Text className="text-muted-foreground text-xs font-semibold">
+                          Max Delegations
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                  {myRole === "scrum_master" && !isCurrentAssignee && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert(
+                          "Not Assigned to You",
+                          "As a Scrum Master, you can only delegate tasks that are currently assigned to you. This task must be delegated to you first before you can delegate it further."
+                        );
+                      }}
+                    >
+                      <View className="bg-orange-500/10 px-3 py-1.5 rounded-lg border border-orange-500/30">
+                        <Text className="text-orange-600 text-xs font-semibold">
+                          Not Assigned to You
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Creator */}
+              <View className="flex-row items-start gap-3 mb-3">
+                <View className="items-center">
+                  <View className="h-12 w-12 rounded-full bg-green-500/20 items-center justify-center">
+                    <Ionicons name="person-add" size={20} color="#10b981" />
+                  </View>
+                  {(taskWithFlow.assignmentChainWithUsers?.length ?? 0) > 0 && (
+                    <View className="h-8 w-0.5 bg-border my-1" />
+                  )}
+                </View>
+                <View className="flex-1">
+                  <View className="flex-row items-center gap-2 mb-1">
+                    <Text className="text-green-600 font-semibold text-xs uppercase">
+                      Created by
+                    </Text>
+                    <View className="px-2 py-0.5 bg-red-500/20 rounded">
+                      <Text className="text-red-600 text-xs font-semibold">
+                        Owner
+                      </Text>
+                    </View>
+                  </View>
+                  <Text className="text-foreground font-medium">
+                    {taskWithFlow.creator?.name || "Unknown"}
+                  </Text>
+                  <Text className="text-muted-foreground text-xs">
+                    {taskWithFlow.creator?.email || ""}
+                  </Text>
+                  <Text className="text-muted-foreground text-xs mt-1">
+                    {new Date(taskWithFlow.createdAt).toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Assignment Chain */}
+              {taskWithFlow.assignmentChainWithUsers &&
+                taskWithFlow.assignmentChainWithUsers.map(
+                  (entry: any, index: number) => (
+                    <View
+                      key={index}
+                      className="flex-row items-start gap-3 mb-3"
+                    >
+                      <View className="items-center">
+                        <View className="h-12 w-12 rounded-full bg-blue-500/20 items-center justify-center">
+                          <Ionicons
+                            name="arrow-forward"
+                            size={20}
+                            color="#3b82f6"
+                          />
+                        </View>
+                        {index <
+                          (taskWithFlow.assignmentChainWithUsers?.length ?? 0) -
+                            1 && <View className="h-8 w-0.5 bg-border my-1" />}
+                      </View>
+                      <View className="flex-1">
+                        <View className="flex-row items-center gap-2 mb-1">
+                          <Text className="text-blue-600 font-semibold text-xs uppercase">
+                            Delegated to
+                          </Text>
+                          <View
+                            className={`px-2 py-0.5 rounded ${
+                              entry.assigneeRole === "scrum_master"
+                                ? "bg-orange-500/20"
+                                : "bg-blue-500/20"
+                            }`}
+                          >
+                            <Text
+                              className={`text-xs font-semibold ${
+                                entry.assigneeRole === "scrum_master"
+                                  ? "text-orange-600"
+                                  : "text-blue-600"
+                              }`}
+                            >
+                              {entry.assigneeRole === "scrum_master"
+                                ? "Scrum Master"
+                                : "Attendee"}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text className="text-foreground font-medium">
+                          {entry.assignedToUser?.name || "Unknown"}
+                        </Text>
+                        <Text className="text-muted-foreground text-xs">
+                          {entry.assignedToUser?.email || ""}
+                        </Text>
+                        <Text className="text-muted-foreground text-xs mt-1">
+                          By {entry.assignedByUser?.name || "Unknown"} •{" "}
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </Text>
+                      </View>
+                    </View>
+                  )
+                )}
+
+              {/* Current Assignee Badge */}
+              {taskWithFlow.currentAssigneeUser && (
+                <View className="mt-2 p-3 bg-primary/10 border border-primary rounded-lg">
+                  <View className="flex-row items-center gap-2">
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color="#6366f1"
+                    />
+                    <Text className="text-primary font-semibold">
+                      Currently assigned to:{" "}
+                      {taskWithFlow.currentAssigneeUser.name}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {(!taskWithFlow.assignmentChainWithUsers ||
+                taskWithFlow.assignmentChainWithUsers.length === 0) && (
+                <Text className="text-muted-foreground text-sm italic mt-2">
+                  No delegation history yet. Task created by{" "}
+                  {taskWithFlow.creator?.name || "Unknown"}.
+                </Text>
+              )}
+            </View>
+          )}
 
           {/* Assigned Users Section */}
           <View className="bg-card border border-border rounded-lg p-4 mb-6">
@@ -442,6 +818,138 @@ export default function TaskDetailScreen() {
                   </TouchableOpacity>
                 </View>
               </ScrollView>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Delegate Task Modal */}
+      <Modal
+        visible={showDelegateModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowDelegateModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1"
+        >
+          <TouchableOpacity
+            className="flex-1 bg-black/50 justify-end"
+            activeOpacity={1}
+            onPress={() => setShowDelegateModal(false)}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View className="bg-background rounded-t-3xl pt-6 px-6 pb-8 max-h-[80%]">
+                <View className="flex-row items-center justify-between mb-6">
+                  <Text className="text-foreground text-xl font-bold">
+                    Delegate Task
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowDelegateModal(false);
+                      setSelectedDelegateUser(null);
+                    }}
+                  >
+                    <Ionicons name="close" size={24} color="#6b7280" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text className="text-muted-foreground mb-4">
+                  {myRole === "owner"
+                    ? "Select a Scrum Master or Attendee to delegate this task to:"
+                    : myRole === "scrum_master" && isCurrentAssignee
+                      ? "Select an Attendee to delegate this task to:"
+                      : "You can only delegate tasks that are assigned to you."}
+                </Text>
+
+                <ScrollView
+                  className="mb-4"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View className="gap-2">
+                    {availableForDelegation?.map((member) => (
+                      <TouchableOpacity
+                        key={member.userId}
+                        className={`flex-row items-center gap-3 p-3 rounded-lg border ${
+                          selectedDelegateUser === member.userId
+                            ? "border-primary bg-primary/10"
+                            : "border-border bg-card"
+                        }`}
+                        onPress={() => setSelectedDelegateUser(member.userId)}
+                      >
+                        <View className="h-10 w-10 rounded-full bg-primary/20 items-center justify-center">
+                          <Text className="text-primary font-bold">
+                            {member.user.name.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-foreground font-medium">
+                            {member.user.name}
+                          </Text>
+                          <Text className="text-muted-foreground text-xs">
+                            {member.user.email}
+                          </Text>
+                          <View
+                            className={`mt-1 px-2 py-0.5 rounded self-start ${
+                              member.role === "scrum_master"
+                                ? "bg-orange-500/20"
+                                : "bg-blue-500/20"
+                            }`}
+                          >
+                            <Text
+                              className={`text-xs font-semibold ${
+                                member.role === "scrum_master"
+                                  ? "text-orange-600"
+                                  : "text-blue-600"
+                              }`}
+                            >
+                              {member.role === "scrum_master"
+                                ? "Scrum Master"
+                                : "Attendee"}
+                            </Text>
+                          </View>
+                        </View>
+                        {selectedDelegateUser === member.userId && (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={24}
+                            color="#6366f1"
+                          />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                    {(!availableForDelegation ||
+                      availableForDelegation.length === 0) && (
+                      <View className="bg-card border border-border rounded-lg p-4">
+                        <Text className="text-muted-foreground text-center">
+                          No members available for delegation
+                        </Text>
+                        <Text className="text-muted-foreground text-xs text-center mt-2">
+                          {delegationLimitReached
+                            ? "Maximum delegation limit reached (3 max)"
+                            : "All eligible members have already been assigned this task"}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </ScrollView>
+
+                <TouchableOpacity
+                  className={`py-3 rounded-lg ${
+                    selectedDelegateUser ? "bg-primary" : "bg-muted"
+                  }`}
+                  onPress={handleDelegateTask}
+                  disabled={!selectedDelegateUser}
+                >
+                  <Text className="text-primary-foreground text-center font-semibold">
+                    Delegate Task
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           </TouchableOpacity>
         </KeyboardAvoidingView>

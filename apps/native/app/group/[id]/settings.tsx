@@ -62,10 +62,23 @@ export default function GroupSettingsScreen() {
   const [updating, setUpdating] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  // Find current user's role in this group
-  const myRole = groupsWithStats?.find((g) => g._id === groupId)?.role;
+  // Find current user's role in this group - try multiple sources
+  const myRole =
+    groupsWithStats?.find((g) => g._id === groupId)?.role ||
+    members?.find(
+      (m) => m.user.email === clerkUser?.emailAddresses[0].emailAddress
+    )?.role;
   const canManageMembers = myRole === "owner" || myRole === "scrum_master";
   const canEditGroup = myRole === "owner";
+
+  // Debug logging
+  console.log("Settings Debug:", {
+    myRole,
+    canManageMembers,
+    canEditGroup,
+    membersCount: members?.length,
+    groupsWithStatsCount: groupsWithStats?.length,
+  });
 
   const handleEditGroup = () => {
     if (!group) return;
