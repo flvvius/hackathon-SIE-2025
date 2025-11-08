@@ -8,9 +8,15 @@
  * @module
  */
 
+import type * as comments from "../comments.js";
+import type * as groups from "../groups.js";
 import type * as healthCheck from "../healthCheck.js";
+import type * as notifications from "../notifications.js";
 import type * as privateData from "../privateData.js";
+import type * as subtasks from "../subtasks.js";
+import type * as tasks from "../tasks.js";
 import type * as todos from "../todos.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -27,9 +33,15 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  comments: typeof comments;
+  groups: typeof groups;
   healthCheck: typeof healthCheck;
+  notifications: typeof notifications;
   privateData: typeof privateData;
+  subtasks: typeof subtasks;
+  tasks: typeof tasks;
   todos: typeof todos;
+  users: typeof users;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 
