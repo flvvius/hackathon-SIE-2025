@@ -140,3 +140,52 @@ export const grantAccess = mutation({
     return { success: true };
   },
 });
+
+export const getStatuses = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    return await ctx.db
+      .query("taskStatuses")
+      .withIndex("by_group", (q: any) => q.eq("groupId", groupId))
+      .order("asc")
+      .collect();
+  },
+});
+
+export const createSimple = mutation({
+  args: {
+    groupId: v.id("groups"),
+    statusId: v.id("taskStatuses"),
+    title: v.string(),
+    description: v.optional(v.string()),
+    priority: v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    ),
+    deadline: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const me = await getMe(ctx);
+    const now = Date.now();
+    
+    // For MVP, store plain text in encrypted fields
+    const taskId = await ctx.db.insert("tasks", {
+      groupId: args.groupId,
+      encryptedTitle: args.title,
+      encryptedDescription: args.description,
+      statusId: args.statusId,
+      priority: args.priority,
+      deadline: args.deadline,
+      assignments: [{ userId: me._id, taskRole: "owner" }],
+      creatorId: me._id,
+      isCompleted: false,
+      completedAt: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    
+    return await ctx.db.get(taskId);
+  },
+});
