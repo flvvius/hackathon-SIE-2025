@@ -108,6 +108,10 @@ export const toggleComplete = mutation({
 
     const wasNotCompleted = !st.isCompleted; // Track if this is a new completion
 
+    // Get parent task once at the beginning
+    const task = await ctx.db.get(st.parentTaskId);
+    if (!task) throw new Error("Parent task not found");
+
     await ctx.db.patch(subtaskId, {
       isCompleted: completed,
       completedAt: completed ? Date.now() : undefined,
@@ -117,65 +121,90 @@ export const toggleComplete = mutation({
 
     // If subtask was just completed, notify scrum masters
     if (completed && wasNotCompleted) {
-      const task = await ctx.db.get(st.parentTaskId);
-      if (task) {
-        const user = await ctx.db.get(userId);
+      const user = await ctx.db.get(userId);
 
-        // Get all scrum masters in the group
-        const groupMembers = await ctx.db
-          .query("groupMembers")
-          .withIndex("by_group", (q: any) => q.eq("groupId", task.groupId))
-          .collect();
+      // Get all scrum masters in the group
+      const groupMembers = await ctx.db
+        .query("groupMembers")
+        .withIndex("by_group", (q: any) => q.eq("groupId", task.groupId))
+        .collect();
 
-        const scrumMasters = groupMembers.filter(
-          (member: any) =>
-            member.role === "scrum_master" && member.userId !== userId // Don't notify the person who completed it
-        );
+      const scrumMasters = groupMembers.filter(
+        (member: any) =>
+          member.role === "scrum_master" && member.userId !== userId // Don't notify the person who completed it
+      );
 
-        // Create notifications for scrum masters
-        for (const sm of scrumMasters) {
-          await ctx.db.insert("notifications", {
-            userId: sm.userId,
-            type: "subtask_completed",
-            encryptedTitle: "Subtask Completed",
-            encryptedMessage: user
-              ? `${user.name} completed a subtask`
-              : "A subtask was completed",
-            relatedTaskId: st.parentTaskId,
-            relatedGroupId: task.groupId,
-            relatedUserId: userId,
-            isRead: false,
-            createdAt: Date.now(),
-          });
-        }
+      // Create notifications for scrum masters
+      for (const sm of scrumMasters) {
+        await ctx.db.insert("notifications", {
+          userId: sm.userId,
+          type: "subtask_completed",
+          encryptedTitle: "Subtask Completed",
+          encryptedMessage: user
+            ? `${user.name} completed a subtask`
+            : "A subtask was completed",
+          relatedTaskId: st.parentTaskId,
+          relatedGroupId: task.groupId,
+          relatedUserId: userId,
+          isRead: false,
+          createdAt: Date.now(),
+        });
       }
     }
 
-    // Auto-complete parent task if all subtasks completed
+    // Auto-move parent task to "Done" if all subtasks completed
     const siblings = await ctx.db
       .query("subtasks")
       .withIndex("by_parent_task", (q: any) =>
         q.eq("parentTaskId", st.parentTaskId)
       )
       .collect();
+
     if (siblings.length > 0 && siblings.every((s: any) => s.isCompleted)) {
-      await ctx.db.patch(st.parentTaskId, {
-        isCompleted: true,
-        completedAt: Date.now(),
-        updatedAt: Date.now(),
-      });
+      // Find the "Done" status for this group
+      const doneStatus = await ctx.db
+        .query("taskStatuses")
+        .withIndex("by_group", (q: any) => q.eq("groupId", task.groupId))
+        .filter((q: any) => q.eq(q.field("name"), "Done"))
+        .first();
+
+      if (doneStatus) {
+        // Move task to "Done" status
+        await ctx.db.patch(st.parentTaskId, {
+          statusId: doneStatus._id,
+          isCompleted: true,
+          completedAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+
+        // Audit log for auto-completion
+        const user = await ctx.db.get(userId);
+        if (user) {
+          await createAuditLog(ctx, {
+            userId: userId,
+            userName: user.name,
+            action: "update",
+            entityType: "task",
+            entityId: st.parentTaskId,
+            entityName: task.encryptedTitle,
+            groupId: task.groupId,
+            description: `Task automatically moved to Done (all subtasks completed)`,
+            metadata: {
+              statusId: doneStatus._id,
+              statusName: "Done",
+              trigger: "all_subtasks_completed",
+            },
+          });
+        }
+      }
     } else if (completed === false) {
-      // Re-open task if a subtask was unchecked
-      await ctx.db.patch(st.parentTaskId, {
-        isCompleted: false,
-        completedAt: undefined,
-        updatedAt: Date.now(),
-      });
+      // Don't auto-reopen the task - let users manually manage task status
+      // This prevents confusion when someone unchecks a subtask
+      // The task will stay in "Done" if it was manually moved there
     }
 
     // Audit log
     const user = await ctx.db.get(userId);
-    const task = await ctx.db.get(st.parentTaskId);
     if (user && task) {
       await createAuditLog(ctx, {
         userId: userId,
