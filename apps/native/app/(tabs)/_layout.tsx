@@ -1,10 +1,22 @@
 import { TabBarIcon } from "@/components/tabbar-icon";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
+import { useAuth } from "@clerk/clerk-expo";
 
 export default function TabLayout() {
   const { isDarkColorScheme } = useColorScheme();
+  const { isSignedIn, isLoaded } = useAuth();
+
+  // Show loading while checking auth status
+  if (!isLoaded) {
+    return null;
+  }
+
+  // Redirect to welcome screen if not authenticated
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)" />;
+  }
 
   return (
     <Tabs

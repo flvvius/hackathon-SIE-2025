@@ -1,12 +1,6 @@
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { Container } from "@/components/container";
-import { Link } from "expo-router";
-import {
-  Authenticated,
-  AuthLoading,
-  Unauthenticated,
-  useQuery,
-} from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@coTask/backend/convex/_generated/api";
 import { useUser } from "@clerk/clerk-expo";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -19,9 +13,13 @@ export default function Home() {
   return (
     <Container>
       <ScrollView className="flex-1">
-        <View className="px-4">
-          <Text className="font-mono text-foreground text-3xl font-bold mb-4">
+        <View className="px-4 py-6">
+          <Text className="font-mono text-foreground text-3xl font-bold mb-2">
             CoTask
+          </Text>
+          <Text className="text-muted-foreground mb-6">
+            Welcome back,{" "}
+            {user?.firstName || user?.emailAddresses[0].emailAddress}
           </Text>
 
           <View className="bg-card border border-border rounded-xl p-6 mb-6 shadow-sm">
@@ -33,35 +31,31 @@ export default function Home() {
               />
               <View className="flex-1">
                 <Text className="text-sm font-medium text-card-foreground">
-                  Convex
+                  Convex Backend
                 </Text>
-                <Text className="text-muted-foreground">
+                <Text className="text-muted-foreground text-sm">
                   {healthCheck === undefined
-                    ? "Checking..."
+                    ? "Checking connection..."
                     : healthCheck === "OK"
-                      ? "Connected to API"
-                      : "API Disconnected"}
+                      ? "Connected and ready"
+                      : "Disconnected"}
                 </Text>
               </View>
             </View>
           </View>
 
-          <Authenticated>
-            <Text>Hello {user?.emailAddresses[0].emailAddress}</Text>
-            <Text>Private Data: {privateData?.message}</Text>
-            <SignOutButton />
-          </Authenticated>
-          <Unauthenticated>
-            <Link href="/(auth)/sign-in">
-              <Text>Sign in</Text>
-            </Link>
-            <Link href="/(auth)/sign-up">
-              <Text>Sign up</Text>
-            </Link>
-          </Unauthenticated>
-          <AuthLoading>
-            <Text>Loading...</Text>
-          </AuthLoading>
+          {privateData && (
+            <View className="bg-card border border-border rounded-xl p-6 mb-6">
+              <Text className="text-foreground font-semibold mb-2">
+                Private Data Test
+              </Text>
+              <Text className="text-muted-foreground">
+                {privateData.message}
+              </Text>
+            </View>
+          )}
+
+          <SignOutButton />
         </View>
       </ScrollView>
     </Container>
