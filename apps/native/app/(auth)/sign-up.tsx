@@ -17,6 +17,7 @@ export default function SignUpPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [pendingVerification, setPendingVerification] = React.useState(false);
   const [code, setCode] = React.useState("");
+  const [cooldown, setCooldown] = React.useState(0);
 
   // Handle Google OAuth
   const onGoogleSignUp = async () => {
@@ -56,7 +57,24 @@ export default function SignUpPage() {
       );
     } catch (err: any) {
       console.error("Sign up error:", JSON.stringify(err, null, 2));
-      Alert.alert("Error", err.errors?.[0]?.message || "Failed to sign up");
+
+      // Handle specific error cases
+      const errorCode = err.errors?.[0]?.code;
+      if (errorCode === "form_identifier_exists") {
+        Alert.alert(
+          "Email already exists",
+          "This email is already registered. Please sign in instead.",
+          [
+            {
+              text: "Go to Sign In",
+              onPress: () => router.replace("/(auth)/sign-in"),
+            },
+            { text: "Cancel", style: "cancel" },
+          ]
+        );
+      } else {
+        Alert.alert("Error", err.errors?.[0]?.message || "Failed to sign up");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -64,7 +82,7 @@ export default function SignUpPage() {
 
   // Verify email code
   const onVerifyPress = async () => {
-    if (!isLoaded || !code.trim()) return;
+    if (!isLoaded || !code.trim() || cooldown > 0) return;
 
     setIsLoading(true);
     try {
@@ -80,7 +98,62 @@ export default function SignUpPage() {
       }
     } catch (err: any) {
       console.error("Verification error:", JSON.stringify(err, null, 2));
-      Alert.alert("Error", err.errors?.[0]?.message || "Invalid code");
+
+      // Handle specific error cases
+      const errorCode = err.errors?.[0]?.code;
+
+      if (errorCode === "verification_already_verified") {
+        // Email is already verified, try to complete the sign up
+        try {
+          if (signUp.status === "complete") {
+            await setActive({ session: signUp.createdSessionId });
+            router.replace("/(tabs)");
+          } else {
+            // Force a new sign up attempt
+            Alert.alert(
+              "Already verified",
+              "This email is already verified. Please sign in instead.",
+              [
+                {
+                  text: "Go to Sign In",
+                  onPress: () => router.replace("/(auth)/sign-in"),
+                },
+                { text: "Cancel", style: "cancel" },
+              ]
+            );
+          }
+        } catch (completeErr: any) {
+          console.error(
+            "Complete error:",
+            JSON.stringify(completeErr, null, 2)
+          );
+          Alert.alert("Error", "Please try signing in instead of signing up.");
+        }
+      } else if (errorCode === "form_code_incorrect") {
+        Alert.alert(
+          "Invalid Code",
+          "The verification code is incorrect. Please try again."
+        );
+      } else if (errorCode === "too_many_requests") {
+        // Set a 30 second cooldown
+        setCooldown(30);
+        const interval = setInterval(() => {
+          setCooldown((prev) => {
+            if (prev <= 1) {
+              clearInterval(interval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        Alert.alert(
+          "Too Many Attempts",
+          "You've tried too many times. Please wait 30 seconds before trying again."
+        );
+      } else {
+        Alert.alert("Error", err.errors?.[0]?.message || "Invalid code");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -174,13 +247,19 @@ export default function SignUpPage() {
 
               <TouchableOpacity
                 onPress={onVerifyPress}
-                disabled={!code.trim() || isLoading}
+                disabled={!code.trim() || isLoading || cooldown > 0}
                 className={`rounded-lg py-4 mb-4 ${
-                  !code.trim() || isLoading ? "bg-muted" : "bg-primary"
+                  !code.trim() || isLoading || cooldown > 0
+                    ? "bg-muted"
+                    : "bg-primary"
                 }`}
               >
                 <Text className="text-center text-white font-semibold text-base">
-                  {isLoading ? "Verifying..." : "Verify Email"}
+                  {isLoading
+                    ? "Verifying..."
+                    : cooldown > 0
+                      ? `Wait ${cooldown}s`
+                      : "Verify Email"}
                 </Text>
               </TouchableOpacity>
 
