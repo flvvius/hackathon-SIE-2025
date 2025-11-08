@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as _lib_auditLog from "../_lib/auditLog.js";
+import type * as auditLogs from "../auditLogs.js";
 import type * as comments from "../comments.js";
 import type * as groups from "../groups.js";
 import type * as healthCheck from "../healthCheck.js";
@@ -33,6 +35,8 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "_lib/auditLog": typeof _lib_auditLog;
+  auditLogs: typeof auditLogs;
   comments: typeof comments;
   groups: typeof groups;
   healthCheck: typeof healthCheck;

@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { createAuditLog } from "./_lib/auditLog";
 
 // Helper: get auth identity or throw
 async function requireIdentity(ctx: any) {
@@ -41,7 +42,22 @@ export const upsertCurrentUser = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    return await ctx.db.get(id);
+    const user = await ctx.db.get(id);
+    if (user) {
+      await createAuditLog(ctx, {
+        userId: user._id,
+        userName: user.name,
+        action: "create",
+        entityType: "user",
+        entityId: user._id,
+        entityName: user.name,
+        description: `User account created`,
+        metadata: {
+          email: user.email,
+        },
+      });
+    }
+    return user;
   },
 });
 
@@ -88,7 +104,20 @@ export const updateProfile = mutation({
       defaultRole: args.defaultRole ?? user.defaultRole,
       updatedAt: Date.now(),
     });
-    return await ctx.db.get(user._id);
+    const updated = await ctx.db.get(user._id);
+    if (updated) {
+      await createAuditLog(ctx, {
+        userId: updated._id,
+        userName: updated.name,
+        action: "update",
+        entityType: "user",
+        entityId: updated._id,
+        entityName: updated.name,
+        description: `Updated profile`,
+        metadata: args,
+      });
+    }
+    return updated;
   },
 });
 
@@ -109,6 +138,16 @@ export const setDefaultRole = mutation({
       .first();
     if (!user) throw new Error("User not found");
     await ctx.db.patch(user._id, { defaultRole, updatedAt: Date.now() });
+    await createAuditLog(ctx, {
+      userId: user._id,
+      userName: user.name,
+      action: "update",
+      entityType: "user",
+      entityId: user._id,
+      entityName: user.name,
+      description: `Set default role to ${defaultRole}`,
+      metadata: { defaultRole },
+    });
     return { success: true };
   },
 });
@@ -165,11 +204,31 @@ export const grantGroupCreationPermission = mutation({
   },
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    const targetUser = await ctx.db.get(args.userId);
+
     // In production, check if current user is an admin here
     await ctx.db.patch(args.userId, {
       canCreateGroups: args.canCreate,
       updatedAt: Date.now(),
     });
+
+    if (currentUser && targetUser) {
+      await createAuditLog(ctx, {
+        userId: currentUser._id,
+        userName: currentUser.name,
+        action: "update",
+        entityType: "user",
+        entityId: args.userId,
+        entityName: targetUser.name,
+        description: `${args.canCreate ? "Granted" : "Revoked"} group creation permission for ${targetUser.name}`,
+        metadata: { canCreate: args.canCreate },
+      });
+    }
+
     return { success: true };
   },
 });

@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { createAuditLog } from "./_lib/auditLog";
 
 export const create = mutation({
   args: {
@@ -63,6 +64,22 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Audit log
+    await createAuditLog(ctx, {
+      userId: currentUser._id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "subtask",
+      entityId: id,
+      entityName: args.encryptedTitle.substring(0, 50), // First 50 chars
+      groupId: task.groupId,
+      description: `Created subtask for task`,
+      metadata: {
+        parentTaskId: args.parentTaskId,
+      },
+    });
+
     return await ctx.db.get(id);
   },
 });
@@ -155,6 +172,29 @@ export const toggleComplete = mutation({
         updatedAt: Date.now(),
       });
     }
+
+    // Audit log
+    const user = await ctx.db.get(userId);
+    const task = await ctx.db.get(st.parentTaskId);
+    if (user && task) {
+      await createAuditLog(ctx, {
+        userId: userId,
+        userName: user.name,
+        action: completed ? "complete" : "update",
+        entityType: "subtask",
+        entityId: subtaskId,
+        entityName: st.encryptedTitle.substring(0, 50),
+        groupId: task.groupId,
+        description: completed
+          ? `Marked subtask as complete`
+          : `Reopened subtask`,
+        metadata: {
+          parentTaskId: st.parentTaskId,
+          completed,
+        },
+      });
+    }
+
     return { success: true };
   },
 });
@@ -237,6 +277,23 @@ export const delegateSubtask = mutation({
       relatedUserId: currentUser._id,
       isRead: false,
       createdAt: Date.now(),
+    });
+
+    // Audit log
+    await createAuditLog(ctx, {
+      userId: currentUser._id,
+      userName: currentUser.name,
+      action: "assign",
+      entityType: "subtask",
+      entityId: subtaskId,
+      entityName: subtask.encryptedTitle.substring(0, 50),
+      groupId: task.groupId,
+      description: `Assigned subtask to ${assignToUser.name}`,
+      metadata: {
+        assignedTo: assignToUserId,
+        assignedToName: assignToUser.name,
+        parentTaskId: subtask.parentTaskId,
+      },
     });
 
     return { success: true };

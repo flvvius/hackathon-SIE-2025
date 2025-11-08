@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { createAuditLog } from "./_lib/auditLog";
 
 async function requireIdentity(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -85,6 +86,22 @@ export const createGroup = mutation({
         createdAt: now,
       });
     }
+
+    // Audit log
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "create",
+      entityType: "group",
+      entityId: groupId,
+      entityName: args.name,
+      groupId: groupId,
+      description: `Created group "${args.name}"`,
+      metadata: {
+        description: args.description,
+        color: args.color,
+      },
+    });
 
     return await ctx.db.get(groupId);
   },
@@ -196,6 +213,22 @@ export const updateGroup = mutation({
     if (args.color !== undefined) updates.color = args.color;
 
     await ctx.db.patch(args.groupId, updates);
+
+    const group = await ctx.db.get(args.groupId);
+    if (group) {
+      await createAuditLog(ctx, {
+        userId: me._id,
+        userName: me.name,
+        action: "update",
+        entityType: "group",
+        entityId: args.groupId,
+        entityName: group.name,
+        groupId: args.groupId,
+        description: `Updated group details`,
+        metadata: args,
+      });
+    }
+
     return { success: true };
   },
 });
@@ -336,6 +369,21 @@ export const addMember = mutation({
         isRead: false,
         createdAt: Date.now(),
       });
+
+      await createAuditLog(ctx, {
+        userId: me._id,
+        userName: me.name,
+        action: "join",
+        entityType: "group_member",
+        entityId: userToAdd._id,
+        entityName: userToAdd.name,
+        groupId: args.groupId,
+        description: `Added ${userToAdd.name} to group as ${args.role}`,
+        metadata: {
+          userEmail: args.userEmail,
+          role: args.role,
+        },
+      });
     }
 
     return { success: true };
@@ -420,6 +468,20 @@ export const addMemberById = mutation({
       });
     }
 
+    // Audit log
+    const addedUser = await ctx.db.get(args.userId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "assign",
+      entityType: "group_member",
+      entityId: args.userId,
+      entityName: addedUser?.name || "Unknown User",
+      groupId: args.groupId,
+      description: `Added ${addedUser?.name || "user"} to group as ${args.role}`,
+      metadata: { userId: args.userId, role: args.role },
+    });
+
     return { success: true };
   },
 });
@@ -486,6 +548,26 @@ export const removeMember = mutation({
     }
 
     await ctx.db.delete(memberToRemove._id);
+
+    // Audit log
+    const removedUser = await ctx.db.get(args.userId);
+    const group = await ctx.db.get(args.groupId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "delete",
+      entityType: "group_member",
+      entityId: args.userId,
+      entityName: removedUser?.name || "Unknown User",
+      groupId: args.groupId,
+      description: `Removed ${removedUser?.name || "user"} from group`,
+      metadata: {
+        userId: args.userId,
+        removedRole: memberToRemove.role,
+        groupName: group?.name,
+      },
+    });
+
     return { success: true };
   },
 });
@@ -556,6 +638,27 @@ export const updateMemberRole = mutation({
     }
 
     await ctx.db.patch(memberToUpdate._id, { role: args.newRole } as any);
+
+    // Audit log
+    const updatedUser = await ctx.db.get(args.userId);
+    const group = await ctx.db.get(args.groupId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "update",
+      entityType: "group_member",
+      entityId: args.userId,
+      entityName: updatedUser?.name || "Unknown User",
+      groupId: args.groupId,
+      description: `Changed ${updatedUser?.name || "user"}'s role from ${memberToUpdate.role} to ${args.newRole}`,
+      metadata: {
+        userId: args.userId,
+        oldRole: memberToUpdate.role,
+        newRole: args.newRole,
+        groupName: group?.name,
+      },
+    });
+
     return { success: true };
   },
 });

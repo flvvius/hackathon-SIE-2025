@@ -78,9 +78,10 @@ export default function TabLayout() {
         <Tabs.Screen
           name="tasks"
           options={{
-            title: "Tasks",
+            title: "Audit",
+            href: me?.defaultRole === "owner" ? undefined : null, // Only show to owners
             tabBarIcon: ({ color }) => (
-              <Ionicons name="list-outline" size={24} color={color} />
+              <Ionicons name="document-text-outline" size={24} color={color} />
             ),
           }}
         />

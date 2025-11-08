@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { createAuditLog } from "./_lib/auditLog";
 
 async function requireIdentity(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -60,6 +61,24 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Audit log
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "create",
+      entityType: "task",
+      entityId: taskId,
+      entityName: args.encryptedTitle,
+      groupId: args.groupId,
+      description: `Created task "${args.encryptedTitle}"`,
+      metadata: {
+        priority: args.priority,
+        assignmentsCount: args.assignments.length,
+        deadline: args.deadline,
+      },
+    });
+
     return await ctx.db.get(taskId);
   },
 });
@@ -187,6 +206,37 @@ export const updateStatus = mutation({
       }
     }
 
+    // Audit log
+    const identity = await ctx.auth.getUserIdentity();
+    const me = identity
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_clerk_id", (q: any) =>
+            q.eq("clerkId", identity.subject)
+          )
+          .first()
+      : null;
+
+    if (me) {
+      const oldStatus = await ctx.db.get(task.statusId);
+      await createAuditLog(ctx, {
+        userId: me._id,
+        userName: me.name,
+        action: "update",
+        entityType: "task",
+        entityId: taskId,
+        entityName: task.encryptedTitle,
+        groupId: task.groupId,
+        description: `Updated task status from "${oldStatus?.name || "Unknown"}" to "${newStatus?.name || "Unknown"}"`,
+        metadata: {
+          oldStatusId: task.statusId,
+          newStatusId: statusId,
+          oldStatusName: oldStatus?.name,
+          newStatusName: newStatus?.name,
+        },
+      });
+    }
+
     return { success: true };
   },
 });
@@ -211,6 +261,26 @@ export const addAssignment = mutation({
       assignments: [...t.assignments, { userId, taskRole }],
       updatedAt: Date.now(),
     });
+
+    // Audit log
+    const me = await getMe(ctx);
+    const assignedUser = await ctx.db.get(userId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "assign",
+      entityType: "task",
+      entityId: taskId,
+      entityName: t.encryptedTitle,
+      groupId: t.groupId,
+      description: `Assigned ${assignedUser?.name || "user"} to task as ${taskRole}`,
+      metadata: {
+        assignedUserId: userId,
+        assignedUserName: assignedUser?.name,
+        taskRole,
+      },
+    });
+
     return { success: true };
   },
 });
@@ -235,6 +305,20 @@ export const toggleSelfAssignment = mutation({
         assignments: newAssignments,
         updatedAt: Date.now(),
       });
+
+      // Audit log
+      await createAuditLog(ctx, {
+        userId: me._id,
+        userName: me.name,
+        action: "delete",
+        entityType: "task",
+        entityId: taskId,
+        entityName: t.encryptedTitle,
+        groupId: t.groupId,
+        description: `Removed self from task`,
+        metadata: { action: "unassign" },
+      });
+
       return { success: true, assigned: false };
     } else {
       // Add self to assignments
@@ -247,6 +331,20 @@ export const toggleSelfAssignment = mutation({
         ],
         updatedAt: Date.now(),
       });
+
+      // Audit log
+      await createAuditLog(ctx, {
+        userId: me._id,
+        userName: me.name,
+        action: "assign",
+        entityType: "task",
+        entityId: taskId,
+        entityName: t.encryptedTitle,
+        groupId: t.groupId,
+        description: `Assigned self to task as attendee`,
+        metadata: { action: "self_assign" },
+      });
+
       return { success: true, assigned: true };
     }
   },
@@ -264,6 +362,25 @@ export const removeAssignment = mutation({
       assignments: newAssignments,
       updatedAt: Date.now(),
     });
+
+    // Audit log
+    const me = await getMe(ctx);
+    const removedUser = await ctx.db.get(userId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "delete",
+      entityType: "task",
+      entityId: taskId,
+      entityName: t.encryptedTitle,
+      groupId: t.groupId,
+      description: `Removed ${removedUser?.name || "user"} from task`,
+      metadata: {
+        removedUserId: userId,
+        removedUserName: removedUser?.name,
+      },
+    });
+
     return { success: true };
   },
 });
@@ -290,6 +407,25 @@ export const grantAccess = mutation({
         grantedAt: now,
         grantedBy: me._id,
       });
+
+      // Audit log
+      const task = await ctx.db.get(taskId);
+      const grantedUser = await ctx.db.get(userId);
+      await createAuditLog(ctx, {
+        userId: me._id,
+        userName: me.name,
+        action: "update",
+        entityType: "task",
+        entityId: taskId,
+        entityName: task?.encryptedTitle || "Unknown Task",
+        groupId: task?.groupId,
+        description: `Updated access key for ${grantedUser?.name || "user"}`,
+        metadata: {
+          grantedUserId: userId,
+          grantedUserName: grantedUser?.name,
+        },
+      });
+
       return { success: true };
     }
     await ctx.db.insert("userTasks", {
@@ -299,6 +435,25 @@ export const grantAccess = mutation({
       grantedAt: now,
       grantedBy: me._id,
     });
+
+    // Audit log
+    const task = await ctx.db.get(taskId);
+    const grantedUser = await ctx.db.get(userId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "assign",
+      entityType: "task",
+      entityId: taskId,
+      entityName: task?.encryptedTitle || "Unknown Task",
+      groupId: task?.groupId,
+      description: `Granted access to ${grantedUser?.name || "user"}`,
+      metadata: {
+        grantedUserId: userId,
+        grantedUserName: grantedUser?.name,
+      },
+    });
+
     return { success: true };
   },
 });
@@ -346,6 +501,22 @@ export const createSimple = mutation({
       completedAt: undefined,
       createdAt: now,
       updatedAt: now,
+    });
+
+    // Audit log
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "create",
+      entityType: "task",
+      entityId: taskId,
+      entityName: args.title,
+      groupId: args.groupId,
+      description: `Created task "${args.title}"`,
+      metadata: {
+        priority: args.priority,
+        deadline: args.deadline,
+      },
     });
 
     return await ctx.db.get(taskId);
@@ -462,6 +633,25 @@ export const delegateTask = mutation({
         createdAt: Date.now(),
       });
     }
+
+    // Audit log
+    const assigneeUser = await ctx.db.get(args.assignToUserId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "assign",
+      entityType: "task",
+      entityId: args.taskId,
+      entityName: task.encryptedTitle,
+      groupId: task.groupId,
+      description: `Delegated task to ${assigneeUser?.name || "user"}`,
+      metadata: {
+        assignedToUserId: args.assignToUserId,
+        assignedToUserName: assigneeUser?.name,
+        delegatorRole: myRole,
+        assigneeRole: assigneeRole,
+      },
+    });
 
     return await ctx.db.get(args.taskId);
   },

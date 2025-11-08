@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { createAuditLog } from "./_lib/auditLog";
 
 export const add = mutation({
   args: {
@@ -23,6 +24,24 @@ export const add = mutation({
       updatedAt: now,
       isEdited: false,
     });
+
+    // Audit log
+    const task = await ctx.db.get(args.taskId);
+    await createAuditLog(ctx, {
+      userId: me._id,
+      userName: me.name,
+      action: "create",
+      entityType: "comment",
+      entityId: id,
+      entityName: `Comment on task`,
+      groupId: task?.groupId,
+      description: `Added comment to task "${task?.encryptedTitle || "Unknown"}"`,
+      metadata: {
+        taskId: args.taskId,
+        taskTitle: task?.encryptedTitle,
+      },
+    });
+
     return await ctx.db.get(id);
   },
 });

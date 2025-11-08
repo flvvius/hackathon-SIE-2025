@@ -190,25 +190,33 @@ export default defineSchema({
     .index("by_user_and_read", ["userId", "isRead"])
     .index("by_created_at", ["createdAt"]),
 
-  // Activity Logs - logging pentru debugging și audit
-  activityLogs: defineTable({
-    userId: v.id("users"),
-    action: v.string(), // "create_task", "update_task", "complete_task", etc.
+  // Activity Logs - comprehensive audit logging
+  auditLogs: defineTable({
+    userId: v.id("users"), // Who performed the action
+    userName: v.string(), // User name for display
+    action: v.string(), // Action performed (create, update, delete, assign, etc.)
     entityType: v.union(
       v.literal("task"),
       v.literal("subtask"),
       v.literal("group"),
-      v.literal("user")
+      v.literal("user"),
+      v.literal("group_member"),
+      v.literal("notification"),
+      v.literal("comment"),
+      v.literal("todo")
     ),
-    entityId: v.string(), // ID-ul entității afectate
-    metadata: v.optional(v.string()), // JSON string cu detalii suplimentare
-    ipAddress: v.optional(v.string()),
-    userAgent: v.optional(v.string()),
+    entityId: v.string(), // ID of affected entity
+    entityName: v.optional(v.string()), // Name/title of entity for display
+    groupId: v.optional(v.id("groups")), // Related group for filtering
+    description: v.string(), // Human-readable description
+    metadata: v.optional(v.string()), // JSON string with additional details
     timestamp: v.number(),
   })
     .index("by_user", ["userId"])
     .index("by_entity", ["entityType", "entityId"])
-    .index("by_timestamp", ["timestamp"]),
+    .index("by_timestamp", ["timestamp"])
+    .index("by_group", ["groupId"])
+    .index("by_group_and_timestamp", ["groupId", "timestamp"]),
 
   // Comments - comentarii pe task-uri (encriptate)
   comments: defineTable({
