@@ -63,6 +63,9 @@ export const updateProfile = mutation({
 		description: v.optional(v.string()),
 		contact: v.optional(v.string()),
 		name: v.optional(v.string()),
+		defaultRole: v.optional(
+			v.union(v.literal("owner"), v.literal("scrum_master"), v.literal("attendee"))
+		),
 	},
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
@@ -75,9 +78,31 @@ export const updateProfile = mutation({
 			description: args.description ?? user.description,
 			contact: args.contact ?? user.contact,
 			name: args.name ?? user.name,
+			defaultRole: args.defaultRole ?? user.defaultRole,
 			updatedAt: Date.now(),
 		});
 		return await ctx.db.get(user._id);
+	},
+});
+
+// Set default role explicitly (first-time popup)
+export const setDefaultRole = mutation({
+	args: {
+		defaultRole: v.union(
+			v.literal("owner"),
+			v.literal("scrum_master"),
+			v.literal("attendee")
+		),
+	},
+	handler: async (ctx, { defaultRole }) => {
+		const identity = await requireIdentity(ctx);
+		const user = await ctx.db
+			.query("users")
+			.withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+			.first();
+		if (!user) throw new Error("User not found");
+		await ctx.db.patch(user._id, { defaultRole, updatedAt: Date.now() });
+		return { success: true };
 	},
 });
 
