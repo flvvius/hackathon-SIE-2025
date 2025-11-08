@@ -7,6 +7,7 @@ import { useState } from "react";
 
 export default function AuditScreen() {
   const currentUser = useQuery(api.users.getCurrentUser);
+  const isOwner = useQuery(api.users.isOwnerAnywhere);
   const auditLogs = useQuery(api.auditLogs.listAll, { limit: 100 });
   const [refreshing, setRefreshing] = useState(false);
 
@@ -16,8 +17,8 @@ export default function AuditScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
-  // Only owners can see audit logs
-  if (currentUser && currentUser.defaultRole !== "owner") {
+  // Only owners in any group can see audit logs
+  if (currentUser && !isOwner) {
     return (
       <Container>
         <View className="flex-1 items-center justify-center px-6">
@@ -26,7 +27,7 @@ export default function AuditScreen() {
             Access Denied
           </Text>
           <Text className="text-muted-foreground text-sm text-center mt-2">
-            Only users with Owner role can view audit logs.
+            Only group owners can view audit logs.
           </Text>
         </View>
       </Container>

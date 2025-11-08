@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { createAuditLog } from "./_lib/auditLog";
+import { getUserRoleInGroup } from "./_lib/permissions";
 
 export const create = mutation({
   args: {
@@ -30,15 +31,32 @@ export const create = mutation({
       throw new Error("Task not found");
     }
 
-    // Check permissions based on defaultRole
-    if (currentUser.defaultRole === "scrum_master") {
-      // Scrum masters can only create subtasks if the task is assigned to them
-      if (task.currentAssignee !== currentUser._id) {
+    // Check permissions based on role in the group
+    const userRole = await getUserRoleInGroup(
+      ctx,
+      currentUser._id,
+      task.groupId
+    );
+    if (!userRole) {
+      throw new Error("You are not a member of this group");
+    }
+
+    // Permission rules:
+    // - Owners can always create subtasks
+    // - Scrum masters can create subtasks ONLY if they are currently assigned OR were assigned in the past
+    // - Attendees cannot create subtasks
+    if (userRole === "scrum_master") {
+      const isCurrentlyAssigned = task.currentAssignee === currentUser._id;
+      const wasAssignedInPast = task.assignmentChain?.some(
+        (assignment) => assignment.assignedTo === currentUser._id
+      );
+
+      if (!isCurrentlyAssigned && !wasAssignedInPast) {
         throw new Error(
-          "Scrum Masters can only create subtasks for tasks that are delegated to them"
+          "Scrum Masters can only create subtasks for tasks that are or were delegated to them"
         );
       }
-    } else if (currentUser.defaultRole === "attendee") {
+    } else if (userRole === "attendee") {
       // Attendees cannot create subtasks
       throw new Error("Attendees cannot create subtasks");
     }
@@ -246,45 +264,43 @@ export const delegateSubtask = mutation({
       .first();
     if (!currentUser) throw new Error("User not found");
 
-    // Check if current user has scrum_master defaultRole
-    if (currentUser.defaultRole !== "scrum_master") {
-      throw new Error("Only Scrum Masters can delegate subtasks");
-    }
-
     // Get subtask
     const subtask = await ctx.db.get(subtaskId);
     if (!subtask) throw new Error("Subtask not found");
+
+    // Get parent task to access groupId
+    const task = await ctx.db.get(subtask.parentTaskId);
+    if (!task) throw new Error("Parent task not found");
+
+    // Check if current user has scrum_master role in the group
+    const currentUserRole = await getUserRoleInGroup(
+      ctx,
+      currentUser._id,
+      task.groupId
+    );
+    if (currentUserRole !== "scrum_master") {
+      throw new Error("Only Scrum Masters can delegate subtasks");
+    }
 
     // Check if trying to assign to the same user
     if (subtask.assignedTo === assignToUserId) {
       throw new Error("This subtask is already assigned to this user");
     }
 
-    // Get parent task to access groupId
-    const task = await ctx.db.get(subtask.parentTaskId);
-    if (!task) throw new Error("Parent task not found");
-
     // Get the user being assigned to
     const assignToUser = await ctx.db.get(assignToUserId);
     if (!assignToUser) throw new Error("User to assign not found");
 
-    // Check if assignToUser has defaultRole "attendee"
-    if (assignToUser.defaultRole !== "attendee") {
+    // Check if assignToUser has "attendee" role in the group
+    const assignToUserRole = await getUserRoleInGroup(
+      ctx,
+      assignToUserId,
+      task.groupId
+    );
+    if (assignToUserRole !== "attendee") {
       throw new Error(
-        "Subtasks can only be assigned to users with Attendee role"
+        "Subtasks can only be assigned to users with Attendee role in this group"
       );
-    }
-
-    // Check if assignToUser is a member of the group
-    const membership = await ctx.db
-      .query("groupMembers")
-      .withIndex("by_group_and_user", (q) =>
-        q.eq("groupId", task.groupId).eq("userId", assignToUserId)
-      )
-      .first();
-
-    if (!membership) {
-      throw new Error("The selected user is not a member of this group");
     } // Update subtask with assignedTo
     await ctx.db.patch(subtaskId, {
       assignedTo: assignToUserId,

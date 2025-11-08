@@ -1,5 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { isUserOwnerAnywhere } from "./_lib/permissions";
 
 export const listAll = query({
   args: {
@@ -20,8 +21,9 @@ export const listAll = query({
       return [];
     }
 
-    // Only owners can view all audit logs
-    if (currentUser.defaultRole !== "owner") {
+    // Only users who are owners in at least one group can view all audit logs
+    const isOwner = await isUserOwnerAnywhere(ctx, currentUser._id);
+    if (!isOwner) {
       return [];
     }
 
@@ -102,8 +104,9 @@ export const listByUser = query({
       return [];
     }
 
-    // Only owners can view user-specific logs, or users viewing their own logs
-    if (currentUser.defaultRole !== "owner" && currentUser._id !== userId) {
+    // Only owners in any group can view user-specific logs, or users viewing their own logs
+    const isOwner = await isUserOwnerAnywhere(ctx, currentUser._id);
+    if (!isOwner && currentUser._id !== userId) {
       return [];
     }
 

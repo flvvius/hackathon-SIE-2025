@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { createAuditLog } from "./_lib/auditLog";
+import { canUserCreateGroups } from "./_lib/permissions";
 
 async function requireIdentity(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -44,10 +45,11 @@ export const createGroup = mutation({
       .first();
     if (!me) throw new Error("User not found");
 
-    // Check if user's defaultRole is "owner"
-    if (me.defaultRole !== "owner") {
+    // Check if user has permission to create groups
+    const canCreate = await canUserCreateGroups(ctx, me._id);
+    if (!canCreate) {
       throw new Error(
-        "Only users with Owner role can create groups. Please contact an administrator to be granted Owner permissions."
+        "You don't have permission to create groups. Please contact an administrator."
       );
     }
 
@@ -252,7 +254,6 @@ export const getMembersWithUserInfo = query({
             name: user.name,
             email: user.email,
             profilePicture: user.profilePicture,
-            defaultRole: user.defaultRole,
           },
         });
       }

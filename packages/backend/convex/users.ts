@@ -81,13 +81,6 @@ export const updateProfile = mutation({
     contact: v.optional(v.string()),
     name: v.optional(v.string()),
     publicKey: v.optional(v.string()),
-    defaultRole: v.optional(
-      v.union(
-        v.literal("owner"),
-        v.literal("scrum_master"),
-        v.literal("attendee")
-      )
-    ),
   },
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
@@ -101,7 +94,6 @@ export const updateProfile = mutation({
       contact: args.contact ?? user.contact,
       name: args.name ?? user.name,
       publicKey: args.publicKey ?? user.publicKey,
-      defaultRole: args.defaultRole ?? user.defaultRole,
       updatedAt: Date.now(),
     });
     const updated = await ctx.db.get(user._id);
@@ -118,37 +110,6 @@ export const updateProfile = mutation({
       });
     }
     return updated;
-  },
-});
-
-// Set default role explicitly (first-time popup)
-export const setDefaultRole = mutation({
-  args: {
-    defaultRole: v.union(
-      v.literal("owner"),
-      v.literal("scrum_master"),
-      v.literal("attendee")
-    ),
-  },
-  handler: async (ctx, { defaultRole }) => {
-    const identity = await requireIdentity(ctx);
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-    if (!user) throw new Error("User not found");
-    await ctx.db.patch(user._id, { defaultRole, updatedAt: Date.now() });
-    await createAuditLog(ctx, {
-      userId: user._id,
-      userName: user.name,
-      action: "update",
-      entityType: "user",
-      entityId: user._id,
-      entityName: user.name,
-      description: `Set default role to ${defaultRole}`,
-      metadata: { defaultRole },
-    });
-    return { success: true };
   },
 });
 
@@ -190,8 +151,31 @@ export const canCreateGroups = query({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
     if (!user) return false;
-    // Only users with "owner" defaultRole can create groups
-    return user.defaultRole === "owner";
+    // Check if user has the canCreateGroups permission
+    // Default to true if undefined (backwards compatibility for existing users)
+    return user.canCreateGroups !== false;
+  },
+});
+
+// Check if current user is an owner in any group
+export const isOwnerAnywhere = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return false;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) return false;
+
+    const memberships = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("role"), "owner"))
+      .first();
+
+    return memberships !== null;
   },
 });
 

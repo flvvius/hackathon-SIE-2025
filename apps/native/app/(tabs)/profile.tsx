@@ -52,9 +52,7 @@ export default function ProfileScreen() {
   const profileImage = user?.imageUrl || me?.profilePicture || "";
   const email = user?.emailAddresses[0]?.emailAddress || me?.email || "";
   const username = useMemo(() => {
-    return (
-      user?.username || user?.firstName || email.split("@")[0] || "User"
-    );
+    return user?.username || user?.firstName || email.split("@")[0] || "User";
   }, [user, email]);
   const fullName = me?.name || user?.fullName || username;
 
@@ -94,7 +92,10 @@ export default function ProfileScreen() {
         <View className="items-center px-4 py-6">
           <View className="relative">
             {profileImage ? (
-              <Image source={{ uri: profileImage }} className="w-32 h-32 rounded-full" />
+              <Image
+                source={{ uri: profileImage }}
+                className="w-32 h-32 rounded-full"
+              />
             ) : (
               <View className="w-32 h-32 rounded-full bg-primary items-center justify-center">
                 <Text className="text-primary-foreground text-4xl font-bold">
@@ -104,32 +105,13 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          <Text className="text-2xl font-bold text-foreground mt-4">{fullName}</Text>
+          <Text className="text-2xl font-bold text-foreground mt-4">
+            {fullName}
+          </Text>
           <Text className="text-muted-foreground">@{username}</Text>
         </View>
 
         <View className="px-4 space-y-4">
-          {/* Default Role (read-only) */}
-          {me?.defaultRole && (
-            <View className="bg-card border border-border rounded-xl p-4">
-              <View className="flex-row items-center gap-3 mb-1">
-                <Ionicons
-                  name="person-circle-outline"
-                  size={20}
-                  color={isDarkColorScheme ? "#9ca3af" : "#6b7280"}
-                />
-                <Text className="text-sm font-semibold text-muted-foreground">
-                  Base Role
-                </Text>
-              </View>
-              <Text className="text-foreground font-medium capitalize">
-                {me.defaultRole.replace("_", " ")}
-              </Text>
-              <Text className="text-muted-foreground text-xs mt-1">
-                This is your initial role preference. Group-specific roles may differ.
-              </Text>
-            </View>
-          )}
           <View className="bg-card border border-border rounded-xl p-4">
             <View className="flex-row items-center gap-3 mb-2">
               <Ionicons
@@ -137,7 +119,9 @@ export default function ProfileScreen() {
                 size={20}
                 color={isDarkColorScheme ? "#9ca3af" : "#6b7280"}
               />
-              <Text className="text-sm font-semibold text-muted-foreground">Email</Text>
+              <Text className="text-sm font-semibold text-muted-foreground">
+                Email
+              </Text>
             </View>
             <Text className="text-foreground text-base">{email}</Text>
           </View>
@@ -149,7 +133,9 @@ export default function ProfileScreen() {
                 size={20}
                 color={isDarkColorScheme ? "#9ca3af" : "#6b7280"}
               />
-              <Text className="text-sm font-semibold text-muted-foreground">Description</Text>
+              <Text className="text-sm font-semibold text-muted-foreground">
+                Description
+              </Text>
             </View>
             {isEditing ? (
               <TextInput
@@ -162,7 +148,9 @@ export default function ProfileScreen() {
                 numberOfLines={3}
               />
             ) : (
-              <Text className="text-foreground text-base">{description || "Add a short bio"}</Text>
+              <Text className="text-foreground text-base">
+                {description || "Add a short bio"}
+              </Text>
             )}
           </View>
 
@@ -173,7 +161,9 @@ export default function ProfileScreen() {
                 size={20}
                 color={isDarkColorScheme ? "#9ca3af" : "#6b7280"}
               />
-              <Text className="text-sm font-semibold text-muted-foreground">Contact</Text>
+              <Text className="text-sm font-semibold text-muted-foreground">
+                Contact
+              </Text>
             </View>
             {isEditing ? (
               <TextInput
@@ -196,7 +186,9 @@ export default function ProfileScreen() {
                 size={20}
                 color={isDarkColorScheme ? "#9ca3af" : "#6b7280"}
               />
-              <Text className="text-sm font-semibold text-muted-foreground">Account Type</Text>
+              <Text className="text-sm font-semibold text-muted-foreground">
+                Account Type
+              </Text>
             </View>
             <Text className="text-foreground text-base">
               {user?.externalAccounts?.find((acc) => acc.provider === "google")
@@ -204,8 +196,13 @@ export default function ProfileScreen() {
                 : "Email Account"}
             </Text>
             <View className="mt-3">
-              <Text className="text-xs font-medium text-muted-foreground mb-1">Encryption Key</Text>
-              <Text className="text-[10px] text-muted-foreground" numberOfLines={1}>
+              <Text className="text-xs font-medium text-muted-foreground mb-1">
+                Encryption Key
+              </Text>
+              <Text
+                className="text-[10px] text-muted-foreground"
+                numberOfLines={1}
+              >
                 {keyReady ? me?.publicKey || "Generating..." : "Loading..."}
               </Text>
             </View>

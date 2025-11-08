@@ -10,16 +10,17 @@ export default defineSchema({
     profilePicture: v.optional(v.string()),
     description: v.optional(v.string()),
     contact: v.optional(v.string()),
-    // Rol implicit selectat la primul login (pentru UX); rolurile reale în grup rămân în groupMembers
+    // Global permission to create new groups (system-level permission)
+    canCreateGroups: v.optional(v.boolean()),
+    // DEPRECATED: defaultRole kept for backwards compatibility with existing records
     defaultRole: v.optional(
       v.union(
         v.literal("owner"),
         v.literal("scrum_master"),
+        v.literal("developer"),
         v.literal("attendee")
       )
     ),
-    // Global permission to create new groups
-    canCreateGroups: v.optional(v.boolean()),
     publicKey: v.optional(v.string()), // Cheie publică pentru encriptare end-to-end (optional for MVP)
     createdAt: v.number(),
     updatedAt: v.number(),

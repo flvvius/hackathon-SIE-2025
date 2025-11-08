@@ -321,11 +321,20 @@ export default function TaskDetailScreen() {
   const myMembership = groupMembers?.find((m) => m.userId === currentUser?._id);
   const myRole = myMembership?.role;
 
-  // Check if current user is a scrum master (by defaultRole)
-  const isScrumMaster = currentUser?.defaultRole === "scrum_master";
+  // Check if current user is a scrum master (by role in group)
+  const isScrumMaster = myRole === "scrum_master";
 
   // Check if task is currently assigned to the current user
   const isCurrentAssignee = taskWithFlow?.currentAssignee === currentUser?._id;
+
+  // Check if scrum master was ever assigned this task in the past
+  const wasEverAssigned = taskWithFlow?.assignmentChain?.some(
+    (assignment: any) => assignment.assignedTo === currentUser?._id
+  );
+
+  // Determine if scrum master can create subtasks:
+  // - Must be currently assigned OR have been assigned in the past
+  const scrumMasterCanCreateSubtasks = isCurrentAssignee || wasEverAssigned;
 
   // Determine if user can delegate:
   // - Owners can always delegate (unless limit reached)
@@ -658,9 +667,10 @@ export default function TaskDetailScreen() {
               <Text className="text-foreground text-xl font-bold">
                 Subtasks
               </Text>
-              {/* Owners can always add subtasks, Scrum Masters can only add if task is assigned to them */}
+              {/* Owners can always add subtasks, Scrum Masters can add if currently assigned or were assigned in the past */}
               {(myRole === "owner" ||
-                (myRole === "scrum_master" && isCurrentAssignee)) && (
+                (myRole === "scrum_master" &&
+                  scrumMasterCanCreateSubtasks)) && (
                 <TouchableOpacity
                   onPress={() => setShowAddSubtask(true)}
                   className="bg-primary px-4 py-2 rounded-lg"
@@ -1067,8 +1077,8 @@ export default function TaskDetailScreen() {
                 <View className="gap-3">
                   {groupMembers
                     ?.filter((member) => {
-                      // Only show attendees (by defaultRole)
-                      if (member.user.defaultRole !== "attendee") return false;
+                      // Only show attendees (by role in group)
+                      if (member.role !== "attendee") return false;
                       // Don't show the currently assigned user
                       const currentSubtask = subtasks?.find(
                         (s) => s._id === selectedSubtaskId
@@ -1137,7 +1147,7 @@ export default function TaskDetailScreen() {
                       </TouchableOpacity>
                     ))}
                   {groupMembers?.filter((member) => {
-                    if (member.user.defaultRole !== "attendee") return false;
+                    if (member.role !== "attendee") return false;
                     const currentSubtask = subtasks?.find(
                       (s) => s._id === selectedSubtaskId
                     );
