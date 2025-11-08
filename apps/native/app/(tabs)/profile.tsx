@@ -2,6 +2,7 @@ import { Container } from "@/components/container";
 import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@coTask/backend/convex/_generated/api";
+import { loadKeyPair, generateAndPersistKeyPair } from "@/lib/crypto";
 import { useMutation, useQuery } from "convex/react";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import React, { useMemo, useState } from "react";
@@ -29,6 +30,24 @@ export default function ProfileScreen() {
 
   const me = useQuery(api.users.getCurrentUser) || undefined;
   const update = useMutation(api.users.updateProfile);
+  const [keyReady, setKeyReady] = useState(false);
+
+  // Load or create encryption keypair locally and sync publicKey to backend
+  React.useEffect(() => {
+    (async () => {
+      const existing = await loadKeyPair();
+      if (!existing) {
+        const created = await generateAndPersistKeyPair();
+        // push public key to backend profile if not set
+        if (me && !me.publicKey) {
+          await update({ publicKey: created.publicKey });
+        }
+      } else if (me && !me.publicKey) {
+        await update({ publicKey: existing.publicKey });
+      }
+      setKeyReady(true);
+    })();
+  }, [me?._id]);
 
   const profileImage = user?.imageUrl || me?.profilePicture || "";
   const email = user?.emailAddresses[0]?.emailAddress || me?.email || "";
@@ -90,6 +109,27 @@ export default function ProfileScreen() {
         </View>
 
         <View className="px-4 space-y-4">
+          {/* Default Role (read-only) */}
+          {me?.defaultRole && (
+            <View className="bg-card border border-border rounded-xl p-4">
+              <View className="flex-row items-center gap-3 mb-1">
+                <Ionicons
+                  name="person-circle-outline"
+                  size={20}
+                  color={isDarkColorScheme ? "#9ca3af" : "#6b7280"}
+                />
+                <Text className="text-sm font-semibold text-muted-foreground">
+                  Base Role
+                </Text>
+              </View>
+              <Text className="text-foreground font-medium capitalize">
+                {me.defaultRole.replace("_", " ")}
+              </Text>
+              <Text className="text-muted-foreground text-xs mt-1">
+                This is your initial role preference. Group-specific roles may differ.
+              </Text>
+            </View>
+          )}
           <View className="bg-card border border-border rounded-xl p-4">
             <View className="flex-row items-center gap-3 mb-2">
               <Ionicons
@@ -163,6 +203,12 @@ export default function ProfileScreen() {
                 ? "Google Account"
                 : "Email Account"}
             </Text>
+            <View className="mt-3">
+              <Text className="text-xs font-medium text-muted-foreground mb-1">Encryption Key</Text>
+              <Text className="text-[10px] text-muted-foreground" numberOfLines={1}>
+                {keyReady ? me?.publicKey || "Generating..." : "Loading..."}
+              </Text>
+            </View>
           </View>
 
           <View className="mt-6 mb-8">

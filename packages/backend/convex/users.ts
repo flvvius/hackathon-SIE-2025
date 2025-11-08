@@ -63,6 +63,7 @@ export const updateProfile = mutation({
 		description: v.optional(v.string()),
 		contact: v.optional(v.string()),
 		name: v.optional(v.string()),
+		publicKey: v.optional(v.string()),
 		defaultRole: v.optional(
 			v.union(v.literal("owner"), v.literal("scrum_master"), v.literal("attendee"))
 		),
@@ -78,6 +79,7 @@ export const updateProfile = mutation({
 			description: args.description ?? user.description,
 			contact: args.contact ?? user.contact,
 			name: args.name ?? user.name,
+				publicKey: args.publicKey ?? user.publicKey,
 			defaultRole: args.defaultRole ?? user.defaultRole,
 			updatedAt: Date.now(),
 		});
