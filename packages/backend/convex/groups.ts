@@ -92,3 +92,55 @@ export const groupMembersList = query({
     return members;
   },
 });
+
+export const myGroupsWithStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await requireIdentity(ctx);
+    const me = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!me) return [];
+    
+    const memberships = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_user", (q) => q.eq("userId", me._id))
+      .collect();
+    
+    const groupsWithStats = [];
+    for (const m of memberships) {
+      const g = await ctx.db.get(m.groupId);
+      if (!g) continue;
+      
+      // Get tasks for this group
+      const tasks = await ctx.db
+        .query("tasks")
+        .withIndex("by_group", (q) => q.eq("groupId", g._id))
+        .collect();
+      
+      const totalTasks = tasks.length;
+      const completedTasks = tasks.filter((t) => t.isCompleted).length;
+      const pendingTasks = totalTasks - completedTasks;
+      
+      groupsWithStats.push({
+        ...g,
+        role: m.role,
+        stats: {
+          total: totalTasks,
+          completed: completedTasks,
+          pending: pendingTasks,
+        },
+      });
+    }
+    
+    return groupsWithStats;
+  },
+});
+
+export const getGroup = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, { groupId }) => {
+    return await ctx.db.get(groupId);
+  },
+});

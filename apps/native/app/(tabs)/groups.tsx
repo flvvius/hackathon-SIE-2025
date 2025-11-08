@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
+import { router } from "expo-router";
 
 export default function GroupsScreen() {
 	const groups = useQuery(api.groups.myGroups);
@@ -39,7 +40,11 @@ export default function GroupsScreen() {
 
 					<View className="gap-3">
 						{groups?.map((g) => (
-							<View key={g._id} className="bg-card border border-border rounded-xl p-4 flex-row items-center gap-3">
+							<TouchableOpacity
+								key={g._id}
+								className="bg-card border border-border rounded-xl p-4 flex-row items-center gap-3"
+								onPress={() => router.push(`/group/${g._id}`)}
+							>
 								<View className="h-8 w-1.5 rounded-full" style={{ backgroundColor: g.color || "#94a3b8" }} />
 								<View className="flex-1">
 									<Text className="text-card-foreground font-semibold">{g.name}</Text>
@@ -48,7 +53,7 @@ export default function GroupsScreen() {
 									</Text>
 								</View>
 								<Ionicons name="chevron-forward" size={18} color="#9ca3af" />
-							</View>
+							</TouchableOpacity>
 						))}
 						{groups && groups.length === 0 && (
 							<Text className="text-muted-foreground">No groups yet. Create one.</Text>
