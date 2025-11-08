@@ -13,6 +13,7 @@
     "@clerk/clerk-expo": "^2.14.25",
     "@coTask/backend": "workspace:*",
     "@expo/vector-icons": "^15.0.2",
+    "@react-native-community/datetimepicker": "^8.5.0",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/drawer": "^7.1.1",
     "@react-navigation/native": "^7.0.14",

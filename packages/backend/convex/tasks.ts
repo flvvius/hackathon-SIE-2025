@@ -72,7 +72,7 @@ export const listByGroup = query({
       .withIndex("by_group", (q: any) => q.eq("groupId", groupId))
       .collect();
 
-    // Add subtask counts to each task
+    // Add subtask counts and user info for assignments to each task
     const tasksWithSubtasks = await Promise.all(
       tasks.map(async (task) => {
         const subtasks = await ctx.db
@@ -82,8 +82,27 @@ export const listByGroup = query({
           )
           .collect();
 
+        // Fetch user info for each assignment
+        const assignmentsWithUserInfo = await Promise.all(
+          task.assignments.map(async (assignment: any) => {
+            const user = await ctx.db.get(assignment.userId);
+            return {
+              ...assignment,
+              user: user
+                ? {
+                    _id: user._id,
+                    name: (user as any).name,
+                    email: (user as any).email,
+                    profilePicture: (user as any).profilePicture,
+                  }
+                : null,
+            };
+          })
+        );
+
         return {
           ...task,
+          assignments: assignmentsWithUserInfo,
           subtaskCount: subtasks.length,
           completedSubtaskCount: subtasks.filter((s: any) => s.isCompleted)
             .length,
@@ -142,6 +161,59 @@ export const addAssignment = mutation({
     if (t.assignments.length >= 3) throw new Error("Max 3 assignments");
     await ctx.db.patch(taskId, {
       assignments: [...t.assignments, { userId, taskRole }],
+      updatedAt: Date.now(),
+    });
+    return { success: true };
+  },
+});
+
+export const toggleSelfAssignment = mutation({
+  args: { taskId: v.id("tasks") },
+  handler: async (ctx, { taskId }) => {
+    const me = await getMe(ctx);
+    const t = await ctx.db.get(taskId);
+    if (!t) throw new Error("Task not found");
+
+    const existingIndex = t.assignments.findIndex(
+      (a: any) => a.userId === me._id
+    );
+
+    if (existingIndex >= 0) {
+      // Remove self from assignments
+      const newAssignments = t.assignments.filter(
+        (a: any) => a.userId !== me._id
+      );
+      await ctx.db.patch(taskId, {
+        assignments: newAssignments,
+        updatedAt: Date.now(),
+      });
+      return { success: true, assigned: false };
+    } else {
+      // Add self to assignments
+      if (t.assignments.length >= 3)
+        throw new Error("Max 3 assignments reached");
+      await ctx.db.patch(taskId, {
+        assignments: [
+          ...t.assignments,
+          { userId: me._id, taskRole: "attendee" },
+        ],
+        updatedAt: Date.now(),
+      });
+      return { success: true, assigned: true };
+    }
+  },
+});
+
+export const removeAssignment = mutation({
+  args: { taskId: v.id("tasks"), userId: v.id("users") },
+  handler: async (ctx, { taskId, userId }) => {
+    const t = await ctx.db.get(taskId);
+    if (!t) throw new Error("Task not found");
+    const newAssignments = t.assignments.filter(
+      (a: any) => a.userId !== userId
+    );
+    await ctx.db.patch(taskId, {
+      assignments: newAssignments,
       updatedAt: Date.now(),
     });
     return { success: true };
@@ -207,10 +279,25 @@ export const createSimple = mutation({
       v.literal("urgent")
     ),
     deadline: v.optional(v.number()),
+    assigneeIds: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args) => {
     const me = await getMe(ctx);
     const now = Date.now();
+
+    // Build assignments array - only include assignees if provided
+    const assignments: any[] = [];
+
+    // Add assignees if provided (max 3 total)
+    if (args.assigneeIds && args.assigneeIds.length > 0) {
+      const assigneesToAdd = args.assigneeIds.slice(0, 3);
+
+      for (const userId of assigneesToAdd) {
+        // First assignee is owner, rest are attendees
+        const taskRole = assignments.length === 0 ? "owner" : "attendee";
+        assignments.push({ userId, taskRole });
+      }
+    }
 
     // For MVP, store plain text in encrypted fields
     const taskId = await ctx.db.insert("tasks", {
@@ -220,7 +307,7 @@ export const createSimple = mutation({
       statusId: args.statusId,
       priority: args.priority,
       deadline: args.deadline,
-      assignments: [{ userId: me._id, taskRole: "owner" }],
+      assignments,
       creatorId: me._id,
       isCompleted: false,
       completedAt: undefined,

@@ -124,20 +124,51 @@ export function SwipeableTask({
               <Text className="text-green-500 text-xs">Completed</Text>
             </View>
           )}
+          {(task as any).subtaskCount > 0 && (
+            <View className="flex-row items-center gap-1">
+              <Ionicons name="list-outline" size={14} color="#9ca3af" />
+              <Text className="text-muted-foreground text-xs">
+                {(task as any).completedSubtaskCount}/
+                {(task as any).subtaskCount}
+              </Text>
+            </View>
+          )}
           {task.deadline && (
             <View className="flex-row items-center gap-1">
-              <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
-              <Text className="text-muted-foreground text-xs">
+              <Ionicons
+                name="calendar-outline"
+                size={14}
+                color={
+                  new Date(task.deadline) < new Date() ? "#ef4444" : "#9ca3af"
+                }
+              />
+              <Text
+                className={`text-xs ${
+                  new Date(task.deadline) < new Date()
+                    ? "text-red-500 font-semibold"
+                    : "text-muted-foreground"
+                }`}
+              >
                 {new Date(task.deadline).toLocaleDateString()}
               </Text>
             </View>
           )}
           {task.assignments.length > 0 && (
             <View className="flex-row items-center gap-1">
-              <Ionicons name="people-outline" size={14} color="#9ca3af" />
-              <Text className="text-muted-foreground text-xs">
-                {task.assignments.length}
-              </Text>
+              <View className="flex-row -space-x-2">
+                {task.assignments
+                  .slice(0, 3)
+                  .map((assignment: any, index: number) => (
+                    <View
+                      key={index}
+                      className="h-6 w-6 rounded-full bg-primary/20 border-2 border-card items-center justify-center"
+                    >
+                      <Text className="text-primary text-xs font-semibold">
+                        {assignment.user?.name?.charAt(0).toUpperCase() || "?"}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
             </View>
           )}
         </View>
