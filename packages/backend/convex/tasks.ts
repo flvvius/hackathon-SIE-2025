@@ -67,16 +67,58 @@ export const create = mutation({
 export const listByGroup = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, { groupId }) => {
-    return await ctx.db
+    const tasks = await ctx.db
       .query("tasks")
       .withIndex("by_group", (q: any) => q.eq("groupId", groupId))
       .collect();
+
+    // Add subtask counts to each task
+    const tasksWithSubtasks = await Promise.all(
+      tasks.map(async (task) => {
+        const subtasks = await ctx.db
+          .query("subtasks")
+          .withIndex("by_parent_task", (q: any) =>
+            q.eq("parentTaskId", task._id)
+          )
+          .collect();
+
+        return {
+          ...task,
+          subtaskCount: subtasks.length,
+          completedSubtaskCount: subtasks.filter((s: any) => s.isCompleted)
+            .length,
+        };
+      })
+    );
+
+    return tasksWithSubtasks;
   },
 });
 
 export const updateStatus = mutation({
   args: { taskId: v.id("tasks"), statusId: v.id("taskStatuses") },
   handler: async (ctx, { taskId, statusId }) => {
+    // Check if moving to "Done" status
+    const newStatus = await ctx.db.get(statusId);
+    if (newStatus && newStatus.name === "Done") {
+      // Check if all subtasks are completed
+      const subtasks = await ctx.db
+        .query("subtasks")
+        .withIndex("by_parent_task", (q: any) => q.eq("parentTaskId", taskId))
+        .collect();
+
+      if (subtasks.length > 0) {
+        const incompleteSubtasks = subtasks.filter((s: any) => !s.isCompleted);
+        if (incompleteSubtasks.length > 0) {
+          throw new Error(
+            `Cannot mark task as done. ${incompleteSubtasks.length} subtask${
+              incompleteSubtasks.length > 1 ? "s" : ""
+            } still incomplete.`
+          );
+        }
+      }
+    }
+
     await ctx.db.patch(taskId, { statusId, updatedAt: Date.now() });
     return { success: true };
   },
@@ -169,7 +211,7 @@ export const createSimple = mutation({
   handler: async (ctx, args) => {
     const me = await getMe(ctx);
     const now = Date.now();
-    
+
     // For MVP, store plain text in encrypted fields
     const taskId = await ctx.db.insert("tasks", {
       groupId: args.groupId,
@@ -185,7 +227,7 @@ export const createSimple = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    
+
     return await ctx.db.get(taskId);
   },
 });

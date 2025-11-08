@@ -119,8 +119,18 @@ export const myGroupsWithStats = query({
         .withIndex("by_group", (q) => q.eq("groupId", g._id))
         .collect();
 
+      // Get the "Done" status to check which tasks are completed
+      const statuses = await ctx.db
+        .query("taskStatuses")
+        .withIndex("by_group", (q) => q.eq("groupId", g._id))
+        .collect();
+
+      const doneStatus = statuses.find((s) => s.name === "Done");
+
       const totalTasks = tasks.length;
-      const completedTasks = tasks.filter((t) => t.isCompleted).length;
+      const completedTasks = doneStatus
+        ? tasks.filter((t) => t.statusId === doneStatus._id).length
+        : tasks.filter((t) => t.isCompleted).length; // Fallback to isCompleted
       const pendingTasks = totalTasks - completedTasks;
 
       groupsWithStats.push({

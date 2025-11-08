@@ -19,16 +19,19 @@ import { Id } from "@coTask/backend/convex/_generated/dataModel";
 import { useUser } from "@clerk/clerk-expo";
 
 export default function TaskDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, groupId } = useLocalSearchParams<{
+    id: string;
+    groupId: string;
+  }>();
   const taskId = id as Id<"tasks">;
   const { user: clerkUser } = useUser();
 
+  const tasks = useQuery(api.tasks.listByGroup, {
+    groupId: groupId as Id<"groups">,
+  });
+  const task = tasks?.find((t) => t._id === taskId);
   const subtasks = useQuery(api.subtasks.list, { parentTaskId: taskId });
   const currentUser = useQuery(api.users.getCurrentUser);
-
-  // We'll need to pass the task from the previous screen or fetch all tasks
-  // For now, let's use a state to store the task data
-  const [task, setTask] = useState<any>(null);
 
   const [showAddSubtask, setShowAddSubtask] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
