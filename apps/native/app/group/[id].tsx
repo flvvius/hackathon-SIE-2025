@@ -39,7 +39,6 @@ export default function GroupDetailScreen() {
     "low" | "medium" | "high" | "urgent"
   >("medium");
   const [newTaskDeadline, setNewTaskDeadline] = useState<Date | undefined>();
-  const [selectedAssignees, setSelectedAssignees] = useState<Id<"users">[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Search and pagination states per column
@@ -66,28 +65,14 @@ export default function GroupDetailScreen() {
         description: newTaskDescription,
         priority: newTaskPriority,
         deadline: newTaskDeadline ? newTaskDeadline.getTime() : undefined,
-        assigneeIds:
-          selectedAssignees.length > 0 ? selectedAssignees : undefined,
       });
       setNewTaskTitle("");
       setNewTaskDescription("");
       setNewTaskPriority("medium");
       setNewTaskDeadline(undefined);
-      setSelectedAssignees([]);
       setShowCreateTask(false);
     } catch (error) {
       console.error("Error creating task:", error);
-    }
-  };
-
-  const toggleAssignee = (userId: Id<"users">) => {
-    if (selectedAssignees.includes(userId)) {
-      setSelectedAssignees(selectedAssignees.filter((id) => id !== userId));
-    } else {
-      if (selectedAssignees.length < 3) {
-        // Max 3 assignees
-        setSelectedAssignees([...selectedAssignees, userId]);
-      }
     }
   };
 
@@ -135,10 +120,34 @@ export default function GroupDetailScreen() {
     setCurrentPages((prev) => ({ ...prev, [statusId]: page }));
   };
 
+  // Get current user's role in the group
+  const myMembership = groupMembers?.find((m) => m.userId === currentUser?._id);
+  const myRole = myMembership?.role;
+
+  // Filter tasks based on user role
+  const getVisibleTasks = () => {
+    if (!tasks) return [];
+
+    // Owners and Scrum Masters can see all tasks
+    if (myRole === "owner" || myRole === "scrum_master") {
+      return tasks;
+    }
+
+    // Attendees can only see tasks delegated to them
+    if (myRole === "attendee" && currentUser) {
+      return tasks.filter((task) => task.currentAssignee === currentUser._id);
+    }
+
+    // Default: show no tasks if role is not determined
+    return [];
+  };
+
+  const visibleTasks = getVisibleTasks();
+
   const tasksByStatus =
     statuses?.map((status) => ({
       status,
-      tasks: tasks?.filter((t) => t.statusId === status._id) || [],
+      tasks: visibleTasks?.filter((t) => t.statusId === status._id) || [],
     })) || [];
 
   const priorityColors = {
@@ -224,18 +233,20 @@ export default function GroupDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Create Task Button */}
-          <TouchableOpacity
-            className="bg-primary px-6 py-3 rounded-lg mb-4"
-            onPress={() => setShowCreateTask(true)}
-          >
-            <View className="flex-row items-center justify-center gap-2">
-              <Ionicons name="add-circle-outline" size={20} color="white" />
-              <Text className="text-primary-foreground font-semibold">
-                New Task
-              </Text>
-            </View>
-          </TouchableOpacity>
+          {/* Create Task Button - Only for Owners and Scrum Masters */}
+          {(myRole === "owner" || myRole === "scrum_master") && (
+            <TouchableOpacity
+              className="bg-primary px-6 py-3 rounded-lg mb-4"
+              onPress={() => setShowCreateTask(true)}
+            >
+              <View className="flex-row items-center justify-center gap-2">
+                <Ionicons name="add-circle-outline" size={20} color="white" />
+                <Text className="text-primary-foreground font-semibold">
+                  New Task
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* Swipe Hint */}
           <View className="bg-card border border-border rounded-lg p-3 mb-6 flex-row items-center gap-2">
@@ -407,7 +418,6 @@ export default function GroupDetailScreen() {
               setNewTaskDescription("");
               setNewTaskPriority("medium");
               setNewTaskDeadline(undefined);
-              setSelectedAssignees([]);
             }}
           >
             <TouchableOpacity
@@ -429,7 +439,6 @@ export default function GroupDetailScreen() {
                       setNewTaskDescription("");
                       setNewTaskPriority("medium");
                       setNewTaskDeadline(undefined);
-                      setSelectedAssignees([]);
                     }}
                   >
                     <Ionicons name="close" size={24} color="#6b7280" />
@@ -597,69 +606,6 @@ export default function GroupDetailScreen() {
                         minimumDate={new Date()}
                       />
                     )}
-                  </View>
-
-                  <View>
-                    <Text className="text-foreground font-medium mb-2">
-                      Assign to (max 3)
-                    </Text>
-                    <View className="gap-2">
-                      {groupMembers?.map((member) => {
-                        const isCreator = member.userId === currentUser?._id;
-                        const isSelected = selectedAssignees.includes(
-                          member.userId
-                        );
-                        const canSelect =
-                          selectedAssignees.length < 3 || isSelected;
-
-                        return (
-                          <TouchableOpacity
-                            key={member.userId}
-                            className={`flex-row items-center gap-3 p-3 rounded-lg border ${
-                              isSelected
-                                ? "border-primary bg-primary/10"
-                                : "border-border bg-card"
-                            } ${!canSelect ? "opacity-50" : ""}`}
-                            onPress={() =>
-                              canSelect && toggleAssignee(member.userId)
-                            }
-                            disabled={!canSelect}
-                          >
-                            <View className="h-10 w-10 rounded-full bg-primary/20 items-center justify-center">
-                              <Text className="text-primary font-bold">
-                                {member.user.name.charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View className="flex-1">
-                              <Text className="text-foreground font-medium">
-                                {member.user.name}
-                                {isCreator && (
-                                  <Text className="text-muted-foreground text-xs">
-                                    {" "}
-                                    (You)
-                                  </Text>
-                                )}
-                              </Text>
-                              <Text className="text-muted-foreground text-xs">
-                                {member.user.email}
-                              </Text>
-                            </View>
-                            {isSelected && (
-                              <Ionicons
-                                name="checkmark-circle"
-                                size={24}
-                                color="#6366f1"
-                              />
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                      {groupMembers && groupMembers.length === 0 && (
-                        <Text className="text-muted-foreground text-sm text-center py-4">
-                          No members in this group
-                        </Text>
-                      )}
-                    </View>
                   </View>
 
                   <TouchableOpacity

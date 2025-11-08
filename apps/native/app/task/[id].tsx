@@ -52,22 +52,7 @@ export default function TaskDetailScreen() {
 
   const createSubtask = useMutation(api.subtasks.create);
   const toggleSubtaskComplete = useMutation(api.subtasks.toggleComplete);
-  const toggleSelfAssignment = useMutation(api.tasks.toggleSelfAssignment);
   const delegateTask = useMutation(api.tasks.delegateTask);
-
-  const isAssigned =
-    currentUser &&
-    task?.assignments.some((a: any) => a.userId === currentUser._id);
-
-  const handleToggleSelfAssignment = async () => {
-    try {
-      const result = await toggleSelfAssignment({ taskId });
-      // Success feedback could be added here if needed
-    } catch (error: any) {
-      console.error("Error toggling assignment:", error);
-      Alert.alert("Error", error?.message || "Failed to update assignment");
-    }
-  };
 
   const handleCreateSubtask = async () => {
     if (!newSubtaskTitle.trim() || !currentUser) return;
@@ -382,14 +367,6 @@ export default function TaskDetailScreen() {
                   </Text>
                 </View>
               )}
-              {task.assignments.length > 0 && (
-                <View className="flex-row items-center gap-2">
-                  <Ionicons name="people-outline" size={16} color="#9ca3af" />
-                  <Text className="text-muted-foreground text-sm">
-                    {task.assignments.length} assigned
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
 
@@ -573,75 +550,6 @@ export default function TaskDetailScreen() {
               )}
             </View>
           )}
-
-          {/* Assigned Users Section */}
-          <View className="bg-card border border-border rounded-lg p-4 mb-6">
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-foreground font-semibold">Assigned To</Text>
-              <TouchableOpacity
-                onPress={handleToggleSelfAssignment}
-                className={`px-4 py-2 rounded-lg ${
-                  isAssigned
-                    ? "bg-red-500/10 border border-red-500"
-                    : "bg-primary"
-                }`}
-                disabled={
-                  !currentUser || (task.assignments.length >= 3 && !isAssigned)
-                }
-              >
-                <Text
-                  className={`font-semibold ${
-                    isAssigned ? "text-red-500" : "text-white"
-                  }`}
-                >
-                  {isAssigned ? "Unassign Me" : "Assign Me"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {task.assignments.length > 0 ? (
-              <View className="gap-2">
-                {task.assignments.map((assignment: any, index: number) => (
-                  <View
-                    key={index}
-                    className="flex-row items-center gap-3 bg-muted/50 rounded-lg p-3"
-                  >
-                    <View className="h-10 w-10 rounded-full bg-primary/20 items-center justify-center">
-                      <Text className="text-primary font-bold">
-                        {assignment.user?.name?.charAt(0).toUpperCase() || "?"}
-                      </Text>
-                    </View>
-                    <View className="flex-1">
-                      <Text className="text-foreground font-medium">
-                        {assignment.user?.name || "Unknown User"}
-                      </Text>
-                      <Text className="text-muted-foreground text-xs">
-                        {assignment.user?.email || ""}
-                      </Text>
-                    </View>
-                    <View className="bg-primary/10 px-2 py-1 rounded">
-                      <Text className="text-primary text-xs font-medium uppercase">
-                        {assignment.taskRole}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <View className="items-center py-6">
-                <Ionicons name="person-outline" size={32} color="#9ca3af" />
-                <Text className="text-muted-foreground text-sm mt-2">
-                  No one assigned yet
-                </Text>
-              </View>
-            )}
-
-            {task.assignments.length >= 3 && !isAssigned && (
-              <Text className="text-orange-500 text-xs mt-2">
-                Maximum 3 users can be assigned to a task
-              </Text>
-            )}
-          </View>
 
           {/* Progress Bar */}
           {totalSubtasks > 0 && (

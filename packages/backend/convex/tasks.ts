@@ -327,25 +327,10 @@ export const createSimple = mutation({
       v.literal("urgent")
     ),
     deadline: v.optional(v.number()),
-    assigneeIds: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args) => {
     const me = await getMe(ctx);
     const now = Date.now();
-
-    // Build assignments array - only include assignees if provided
-    const assignments: any[] = [];
-
-    // Add assignees if provided (max 3 total)
-    if (args.assigneeIds && args.assigneeIds.length > 0) {
-      const assigneesToAdd = args.assigneeIds.slice(0, 3);
-
-      for (const userId of assigneesToAdd) {
-        // First assignee is owner, rest are attendees
-        const taskRole = assignments.length === 0 ? "owner" : "attendee";
-        assignments.push({ userId, taskRole });
-      }
-    }
 
     // For MVP, store plain text in encrypted fields
     const taskId = await ctx.db.insert("tasks", {
@@ -355,7 +340,7 @@ export const createSimple = mutation({
       statusId: args.statusId,
       priority: args.priority,
       deadline: args.deadline,
-      assignments,
+      assignments: [], // Start with no assignments - use delegation flow instead
       creatorId: me._id,
       isCompleted: false,
       completedAt: undefined,
